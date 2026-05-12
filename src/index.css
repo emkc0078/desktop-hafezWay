@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply h-full min-h-0;
+  }
+  body {
+    @apply bg-surface-background text-text-primary antialiased dark:bg-gray-900 dark:text-gray-100;
+  }
+}
+
+/* Log modal JSON highlighting (from logs-viewer.html) */
+.json-key {
+  color: #881391;
+}
+.dark .json-key {
+  color: #d4a5ff;
+}
+.json-string {
+  color: #1a1aa6;
+}
+.dark .json-string {
+  color: #9cdcfe;
+}
+.json-number {
+  color: #1c00cf;
+}
+.dark .json-number {
+  color: #b5cea8;
+}
+.json-boolean {
+  color: #0d22aa;
+}
+.dark .json-boolean {
+  color: #569cd6;
+}
+.json-null {
+  color: #808080;
+}
+.json-punctuation {
+  color: #666;
+}
+.search-highlight {
+  background: #ffeb3b;
+  color: #000;
+}
+.search-highlight.current {
+  background: #ff9800;
+}
+.json-content {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
