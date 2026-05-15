@@ -1,11 +1,13 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AdminSettingsProvider } from '@/context/AdminSettingsContext';
+import { LocaleProvider } from '@/context/LocaleContext';
 import { AppShell } from '@/components/AppShell';
 import { AdminDashboardPage } from '@/app/AdminDashboardPage';
 import { LogsViewerPage } from '@/app/LogsViewerPage';
 
 export default function App() {
   return (
+    <LocaleProvider>
     <AdminSettingsProvider>
       <HashRouter>
         <Routes>
@@ -17,5 +19,6 @@ export default function App() {
         </Routes>
       </HashRouter>
     </AdminSettingsProvider>
+    </LocaleProvider>
   );
 }

@@ -11,6 +11,14 @@
   body {
     @apply bg-surface-background text-text-primary antialiased dark:bg-gray-900 dark:text-gray-100;
   }
+  html[dir='rtl'] body {
+    font-family: system-ui, 'Segoe UI', Tahoma, 'Noto Sans Arabic', 'Arabic UI Display', sans-serif;
+  }
+}
+
+/* RTL-aware spacing for flex rows */
+html[dir='rtl'] .rtl-flip-row {
+  flex-direction: row-reverse;
 }
 
 /* Log modal JSON highlighting (from logs-viewer.html) */
