@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAdminSettings } from '@/context/AdminSettingsContext';
+import { useT } from '@/context/LocaleContext';
 import { AdminAuthBar } from '@/components/AdminAuthBar';
 import { adminFetchJson } from '@/utils/adminFetch';
 import { escapeHtml } from '@/utils/escapeHtml';
@@ -9,8 +10,23 @@ import {
   type SessionStudentReportRow,
 } from '@/components/StudentReportDetailModal';
 import { Btn, Card, Field, Input, MessageBanner, Modal, Select, TableShell, TextArea } from '@/components/ui';
+import {
+  SIGNUP_PROGRAM_SKIPS_AMOUNT_WEEKLY_SURAH,
+  SIGNUP_QUIZ_AMOUNT,
+  SIGNUP_QUIZ_MEMORIZED,
+  SIGNUP_QUIZ_PLAN,
+  SIGNUP_QUIZ_PROGRAM,
+  SIGNUP_QUIZ_SURAH,
+  SIGNUP_QUIZ_WEEKLY,
+} from '@/constants/signupQuizOptions';
 
-type Tab = 'rooms' | 'users' | 'comments' | 'studentReports' | 'roomRatings' | 'notifications';
+type Tab =
+  | 'rooms'
+  | 'users'
+  | 'comments'
+  | 'studentReports'
+  | 'roomRatings'
+  | 'notifications';
 
 type Pagination = {
   page: number;
@@ -37,7 +53,101 @@ type NotifyPickerUser = {
   role?: string;
 };
 
+/** Editable signup questionnaire fields (`PATCH /signup-options/:userId`). */
+type AdminSignupDraft = {
+  userType: '' | 'male' | 'female' | 'children';
+  languageTag: string;
+  preferredLanguage: string;
+  nationality: string;
+  countryResidence: string;
+  motherTongue: string;
+  dateOfBirth: string;
+  memorizedQuran: string;
+  amount: string;
+  program: string;
+  weekly: string;
+  surah: string;
+  signupPlan: string;
+};
+
+function signupDraftFromUserDetail(detail: Record<string, unknown>): AdminSignupDraft {
+  const nestedVal = detail.signupProfile;
+  const nested =
+    nestedVal && typeof nestedVal === 'object' && nestedVal !== null
+      ? (nestedVal as Record<string, unknown>)
+      : {};
+  const get = (key: string) => {
+    const v = nested[key] !== undefined ? nested[key] : detail[key];
+    if (v === undefined || v === null) return '';
+    return String(v);
+  };
+  let userType: AdminSignupDraft['userType'] = '';
+  const utRaw = nested.userType !== undefined ? nested.userType : detail.userType;
+  if (utRaw === 'male' || utRaw === 'female' || utRaw === 'children') {
+    userType = utRaw;
+  }
+  let dobStr = '';
+  const dobSrc = nested.dateOfBirth !== undefined ? nested.dateOfBirth : detail.dateOfBirth;
+  if (dobSrc instanceof Date && !Number.isNaN(dobSrc.getTime())) {
+    dobStr = dobSrc.toISOString().slice(0, 10);
+  } else if (typeof dobSrc === 'string') {
+    const m = dobSrc.match(/^(\d{4}-\d{2}-\d{2})/);
+    dobStr = m ? m[1] : '';
+  }
+
+  return {
+    userType,
+    languageTag: get('languageTag'),
+    preferredLanguage: get('preferredLanguage'),
+    nationality: get('nationality'),
+    countryResidence: get('countryResidence'),
+    motherTongue: get('motherTongue'),
+    dateOfBirth: dobStr,
+    memorizedQuran: get('memorizedQuran'),
+    amount: get('amount'),
+    program: get('program'),
+    weekly: get('weekly'),
+    surah: get('surah'),
+    signupPlan: get('signupPlan'),
+  };
+}
+
+/** Label for stored quiz key; falls back to raw value if unknown. */
+function signupQuizOptionLabel(val: string, t: (key: string) => string): string {
+  if (!val) return '';
+  const path = `dashboard.users.signupQuizVals.${val}`;
+  const lbl = t(path);
+  return lbl === path ? val : lbl;
+}
+
+/** Options for `<Select>` matching front-end signup dropdowns (+ optional legacy/custom row). */
+function signupQuizSelectOptions(
+  allowed: readonly string[],
+  current: string,
+  t: (key: string) => string,
+): { value: string; label: string }[] {
+  const unset = t('dashboard.users.signupUserTypeUnset');
+  const customNote = t('dashboard.users.signupCustomStored');
+  const opts: { value: string; label: string }[] = [{ value: '', label: unset }];
+  const allow = allowed as readonly string[];
+  if (current && !allow.includes(current)) {
+    const pretty = signupQuizOptionLabel(current, t);
+    const suffix = ` (${customNote})`;
+    opts.push({
+      value: current,
+      label: pretty !== current ? `${pretty}${suffix}` : `${current}${suffix}`,
+    });
+  }
+  for (const v of allowed) {
+    opts.push({ value: v, label: signupQuizOptionLabel(v, t) });
+  }
+  return opts;
+}
+
+const ROOM_TYPE_COUNTS = [2, 3, 5, 10] as const;
+
 export function AdminDashboardPage() {
+  const t = useT();
   const { serverUrl, liveAppUrl, adminToken, adminName } = useAdminSettings();
 
   const [tab, setTab] = useState<Tab>('rooms');
@@ -56,7 +166,7 @@ export function AdminDashboardPage() {
   const openLiveKitRoomView = useCallback(
     async (room: Record<string, unknown>) => {
       if (!adminToken) {
-        showMessage('Sign in as admin first.', 'error');
+        showMessage(t('common.signInFirst'), 'error');
         return;
       }
       const roomId = String(room._id ?? '');
@@ -81,10 +191,10 @@ export function AdminDashboardPage() {
         });
         window.open(url, '_blank');
       } catch (e) {
-        showMessage(`Could not open room: ${(e as Error).message}`, 'error');
+        showMessage(t('dashboard.rooms.openRoomError', { message: (e as Error).message }), 'error');
       }
     },
-    [adminToken, adminName, serverUrl, liveAppUrl, showMessage],
+    [adminToken, adminName, serverUrl, liveAppUrl, showMessage, t],
   );
 
   const [roomSearch, setRoomSearch] = useState('');
@@ -133,9 +243,9 @@ export function AdminDashboardPage() {
     } catch (e) {
       const err = e as Error;
       setRoomsState({ loading: false, error: err.message });
-      showMessage(`Error loading rooms: ${err.message}`, 'error');
+      showMessage(t('dashboard.rooms.loadError', { message: err.message }), 'error');
     }
-  }, [adminToken, serverUrl, pages.rooms, roomSearch, roomTypeFilter, showMessage]);
+  }, [adminToken, serverUrl, pages.rooms, roomSearch, roomTypeFilter, showMessage, t]);
 
   const loadUsers = useCallback(async () => {
     if (!adminToken) return;
@@ -149,9 +259,9 @@ export function AdminDashboardPage() {
     } catch (e) {
       const err = e as Error;
       setUsersState({ loading: false, error: err.message });
-      showMessage(`Error loading users: ${err.message}`, 'error');
+      showMessage(t('dashboard.users.loadError', { message: err.message }), 'error');
     }
-  }, [adminToken, serverUrl, pages.users, userSearch, userRole, showMessage]);
+  }, [adminToken, serverUrl, pages.users, userSearch, userRole, showMessage, t]);
 
   const loadComments = useCallback(async () => {
     if (!adminToken) return;
@@ -164,9 +274,9 @@ export function AdminDashboardPage() {
     } catch (e) {
       const err = e as Error;
       setCommentsState({ loading: false, error: err.message });
-      showMessage(`Error loading comments: ${err.message}`, 'error');
+      showMessage(t('dashboard.comments.loadError', { message: err.message }), 'error');
     }
-  }, [adminToken, serverUrl, pages.comments, commentSearch, showMessage]);
+  }, [adminToken, serverUrl, pages.comments, commentSearch, showMessage, t]);
 
   const loadStudentReports = useCallback(async () => {
     if (!adminToken) return;
@@ -179,9 +289,9 @@ export function AdminDashboardPage() {
     } catch (e) {
       const err = e as Error;
       setStudentReportsState({ loading: false, error: err.message });
-      showMessage(`Error loading student reports: ${err.message}`, 'error');
+      showMessage(t('dashboard.studentReports.loadError', { message: err.message }), 'error');
     }
-  }, [adminToken, serverUrl, pages.studentReports, studentReportSearch, showMessage]);
+  }, [adminToken, serverUrl, pages.studentReports, studentReportSearch, showMessage, t]);
 
   const loadRoomRatings = useCallback(async () => {
     if (!adminToken) return;
@@ -194,9 +304,9 @@ export function AdminDashboardPage() {
     } catch (e) {
       const err = e as Error;
       setRoomRatingsState({ loading: false, error: err.message });
-      showMessage(`Error loading room ratings: ${err.message}`, 'error');
+      showMessage(t('dashboard.roomRatings.loadError', { message: err.message }), 'error');
     }
-  }, [adminToken, serverUrl, pages.roomRatings, roomRatingSearch, showMessage]);
+  }, [adminToken, serverUrl, pages.roomRatings, roomRatingSearch, showMessage, t]);
 
   useEffect(() => {
     if (!adminToken) return;
@@ -251,7 +361,7 @@ export function AdminDashboardPage() {
       });
       setRoomModal(true);
     } catch (e) {
-      showMessage(`Error loading room: ${(e as Error).message}`, 'error');
+      showMessage(t('dashboard.rooms.loadRoomError', { message: (e as Error).message }), 'error');
     }
   };
 
@@ -269,7 +379,7 @@ export function AdminDashboardPage() {
           .filter(Boolean)
       : [];
     if (!nameAr || !nameEn || !type) {
-      showMessage('Arabic name, English name, and room type are required', 'error');
+      showMessage(t('dashboard.rooms.requiredFields'), 'error');
       return;
     }
     try {
@@ -285,23 +395,25 @@ export function AdminDashboardPage() {
           method: 'PATCH',
           body: JSON.stringify(body),
         });
-        showMessage('Room updated successfully!', 'success');
+        showMessage(t('dashboard.rooms.updated'), 'success');
       } else {
         await adminFetchJson(`${serverUrl}/rooms`, adminToken, {
           method: 'POST',
           body: JSON.stringify(body),
         });
-        showMessage('Room created successfully!', 'success');
+        showMessage(t('dashboard.rooms.created'), 'success');
       }
       setRoomModal(false);
       void loadRooms();
     } catch (err) {
-      showMessage(`Error: ${(err as Error).message}`, 'error');
+      showMessage(t('dashboard.genericError', { message: (err as Error).message }), 'error');
     }
   };
 
   const [userModal, setUserModal] = useState<{ id: string } | null>(null);
   const [userDetail, setUserDetail] = useState<Record<string, unknown> | null>(null);
+  const [signupEdit, setSignupEdit] = useState<AdminSignupDraft | null>(null);
+  const [signupSaving, setSignupSaving] = useState(false);
   const [commentModal, setCommentModal] = useState<{ id: string } | null>(null);
   const [commentDetail, setCommentDetail] = useState<Record<string, unknown> | null>(null);
 
@@ -316,7 +428,61 @@ export function AdminDashboardPage() {
       );
       setUserDetail(data.data.user);
     } catch (e) {
-      showMessage(`Error loading user details: ${(e as Error).message}`, 'error');
+      showMessage(t('dashboard.users.loadDetailError', { message: (e as Error).message }), 'error');
+    }
+  };
+
+  useEffect(() => {
+    if (!userDetail) {
+      setSignupEdit(null);
+      return;
+    }
+    setSignupEdit(signupDraftFromUserDetail(userDetail));
+  }, [userDetail]);
+
+  const saveSignupOptions = async () => {
+    if (!adminToken || !userModal || !signupEdit) return;
+    const trimOrNull = (s: string) => {
+      const v = s.trim();
+      return v === '' ? null : v;
+    };
+    const dobRaw = signupEdit.dateOfBirth.trim();
+    const body: Record<string, unknown> = {
+      userType: signupEdit.userType === '' ? null : signupEdit.userType,
+      languageTag: trimOrNull(signupEdit.languageTag),
+      preferredLanguage: trimOrNull(signupEdit.preferredLanguage),
+      nationality: trimOrNull(signupEdit.nationality),
+      countryResidence: trimOrNull(signupEdit.countryResidence),
+      motherTongue: trimOrNull(signupEdit.motherTongue),
+      dateOfBirth: dobRaw === '' ? null : dobRaw,
+      memorizedQuran: trimOrNull(signupEdit.memorizedQuran),
+      amount: trimOrNull(signupEdit.amount),
+      program: trimOrNull(signupEdit.program),
+      weekly: trimOrNull(signupEdit.weekly),
+      surah: trimOrNull(signupEdit.surah),
+      signupPlan: trimOrNull(signupEdit.signupPlan),
+    };
+    const baseUrl = serverUrl.replace(/\/$/, '');
+    setSignupSaving(true);
+    try {
+      const res = await adminFetchJson<{
+        data?: { signupProfile?: Record<string, unknown> };
+      }>(`${baseUrl}/signup-options/${userModal.id}`, adminToken, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      const fresh = res?.data?.signupProfile;
+      if (fresh && typeof fresh === 'object') {
+        setUserDetail((prev) => (prev ? { ...prev, signupProfile: fresh } : prev));
+      }
+      showMessage(t('dashboard.users.signupSaved'), 'success');
+    } catch (e) {
+      showMessage(
+        t('dashboard.users.signupSaveError', { message: (e as Error).message }),
+        'error',
+      );
+    } finally {
+      setSignupSaving(false);
     }
   };
 
@@ -331,19 +497,19 @@ export function AdminDashboardPage() {
       );
       setCommentDetail(data.data);
     } catch (e) {
-      showMessage(`Error loading comment details: ${(e as Error).message}`, 'error');
+      showMessage(t('dashboard.comments.loadDetailError', { message: (e as Error).message }), 'error');
     }
   };
 
   const deleteCommentById = async (id: string) => {
-    if (!adminToken || !confirm('Are you sure you want to delete this comment?')) return;
+    if (!adminToken || !confirm(t('dashboard.comments.confirmDelete'))) return;
     try {
       await adminFetchJson(`${serverUrl}/api/comments/${id}`, adminToken, { method: 'DELETE' });
-      showMessage('Comment deleted successfully!', 'success');
+      showMessage(t('dashboard.comments.deleted'), 'success');
       setCommentModal(null);
       void loadComments();
     } catch (e) {
-      showMessage(`Error: ${(e as Error).message}`, 'error');
+      showMessage(t('dashboard.genericError', { message: (e as Error).message }), 'error');
     }
   };
 
@@ -351,10 +517,10 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     try {
       await adminFetchJson(`${serverUrl}${path}`, adminToken, { method });
-      showMessage('Success', 'success');
+      showMessage(t('common.success'), 'success');
       void loadUsers();
     } catch (e) {
-      showMessage(`Error: ${(e as Error).message}`, 'error');
+      showMessage(t('dashboard.genericError', { message: (e as Error).message }), 'error');
     }
   };
 
@@ -372,11 +538,11 @@ export function AdminDashboardPage() {
       );
       setNotifUsers(Array.isArray(data.users) ? data.users : []);
     } catch (e) {
-      showMessage(`Error loading users: ${(e as Error).message}`, 'error');
+      showMessage(t('dashboard.notifications.loadUsersError', { message: (e as Error).message }), 'error');
     } finally {
       setNotifLoading(false);
     }
-  }, [adminToken, serverUrl, showMessage]);
+  }, [adminToken, serverUrl, showMessage, t]);
 
   const loadNotificationHistory = useCallback(async () => {
     if (!adminToken) return;
@@ -387,11 +553,11 @@ export function AdminDashboardPage() {
       }>(`${serverUrl}/api/notifications/history`, adminToken);
       setNotifHistory(data.data?.notifications || []);
     } catch (e) {
-      showMessage(`Error loading notification history: ${(e as Error).message}`, 'error');
+      showMessage(t('dashboard.notifications.loadHistoryError', { message: (e as Error).message }), 'error');
     } finally {
       setNotifLoading(false);
     }
-  }, [adminToken, serverUrl, showMessage]);
+  }, [adminToken, serverUrl, showMessage, t]);
 
   useEffect(() => {
     if (tab === 'notifications' && adminToken) {
@@ -433,13 +599,13 @@ export function AdminDashboardPage() {
         });
         setRecipientPickerUsers(normalized.filter((u) => u.id.length > 0));
       } catch (e) {
-        showMessage(`Error loading user list: ${(e as Error).message}`, 'error');
+        showMessage(t('dashboard.notifications.loadListError', { message: (e as Error).message }), 'error');
         setRecipientPickerUsers([]);
       } finally {
         setRecipientPickerLoading(false);
       }
     },
-    [adminToken, serverUrl, showMessage],
+    [adminToken, serverUrl, showMessage, t],
   );
 
   const pushTokenUserIds = useMemo(() => new Set(notifUsers.map((u) => u.userId)), [notifUsers]);
@@ -486,24 +652,24 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     const { userId, title, body, type, sendToMultiple } = notifForm;
     if (!title.trim() || !body.trim()) {
-      showMessage('Title and body are required', 'error');
+      showMessage(t('dashboard.notifications.titleBodyRequired'), 'error');
       return;
     }
     try {
       if (sendToMultiple && !userId.trim()) {
         const userIds = notifUsers.map((u) => u.userId);
         if (!userIds.length) {
-          showMessage('No users available to send notification to', 'error');
+          showMessage(t('dashboard.notifications.noPushRecipients'), 'error');
           return;
         }
         await adminFetchJson(`${serverUrl}/api/notifications/send-multiple`, adminToken, {
           method: 'POST',
           body: JSON.stringify({ userIds, title, body, type }),
         });
-        showMessage(`Notification sent to ${userIds.length} users successfully!`, 'success');
+        showMessage(t('dashboard.notifications.sentBulk', { count: userIds.length }), 'success');
       } else {
         if (!selectedRecipientIds.length) {
-          showMessage('Select at least one recipient', 'error');
+          showMessage(t('dashboard.notifications.selectRecipient'), 'error');
           return;
         }
         if (selectedRecipientIds.length === 1) {
@@ -516,22 +682,20 @@ export function AdminDashboardPage() {
               type,
             }),
           });
+          showMessage(t('dashboard.notifications.sentOne'), 'success');
         } else {
           await adminFetchJson(`${serverUrl}/api/notifications/send-multiple`, adminToken, {
             method: 'POST',
             body: JSON.stringify({ userIds: selectedRecipientIds, title, body, type }),
           });
+          showMessage(t('dashboard.notifications.sentMany', { count: selectedRecipientIds.length }), 'success');
         }
-        showMessage(
-          `Notification sent to ${selectedRecipientIds.length} recipient${selectedRecipientIds.length === 1 ? '' : 's'} successfully!`,
-          'success',
-        );
       }
       closeSendModal();
       void loadUsersWithTokens();
       void loadNotificationHistory();
     } catch (e) {
-      showMessage(`Error sending notification: ${(e as Error).message}`, 'error');
+      showMessage(t('dashboard.notifications.sendError', { message: (e as Error).message }), 'error');
     }
   };
 
@@ -540,17 +704,12 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     const { title, body, type } = sendAllForm;
     if (!title.trim() || !body.trim()) {
-      showMessage('Title and body are required', 'error');
+      showMessage(t('dashboard.notifications.titleBodyRequired'), 'error');
       return;
     }
-    if (
-      !confirm(
-        `Are you sure you want to send this notification to ALL users in the database?\n\nTitle: ${title}\nMessage: ${body}\n\nThis action cannot be undone.`,
-      )
-    )
-      return;
+    if (!confirm(t('dashboard.notifications.sendAllConfirm', { title, body }))) return;
     try {
-      showMessage('Sending notification to all users... This may take a while.', 'info');
+      showMessage(t('dashboard.notifications.sendingAll'), 'info');
       const response = await adminFetchJson<{
         successCount?: number;
         total?: number;
@@ -559,14 +718,17 @@ export function AdminDashboardPage() {
         body: JSON.stringify({ title, body, type }),
       });
       showMessage(
-        `Notification sent to ${response.successCount ?? 0} out of ${response.total ?? 0} users successfully!`,
+        t('dashboard.notifications.sentAll', {
+          success: response.successCount ?? 0,
+          total: response.total ?? 0,
+        }),
         'success',
       );
       setSendAllModal(false);
       void loadUsersWithTokens();
       void loadNotificationHistory();
     } catch (e) {
-      showMessage(`Error sending notification: ${(e as Error).message}`, 'error');
+      showMessage(t('dashboard.notifications.sendError', { message: (e as Error).message }), 'error');
     }
   };
 
@@ -582,17 +744,21 @@ export function AdminDashboardPage() {
           disabled={!pagination.hasPrev}
           onClick={() => change(pagination.page - 1)}
         >
-          Previous
+          {t('common.previous')}
         </Btn>
         <span className="text-sm text-text-muted">
-          Page {pagination.page} of {pagination.pages} ({pagination.total} total)
+          {t('common.pageOf', {
+            page: pagination.page,
+            pages: pagination.pages,
+            total: pagination.total,
+          })}
         </span>
         <Btn
           variant="secondary"
           disabled={!pagination.hasNext}
           onClick={() => change(pagination.page + 1)}
         >
-          Next
+          {t('common.next')}
         </Btn>
       </div>
     );
@@ -617,9 +783,11 @@ export function AdminDashboardPage() {
   return (
     <div className="min-h-full">
       <header className="border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <h1 className="text-xl font-semibold text-text-primary dark:text-gray-100">Admin Dashboard</h1>
-          <div className="min-w-0 flex-1 lg:max-w-xl">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <h1 className="shrink-0 text-xl font-semibold text-text-primary dark:text-gray-100">
+            {t('dashboard.title')}
+          </h1>
+          <div className="min-w-0 w-full lg:max-w-5xl lg:flex-1">
             <AdminAuthBar />
           </div>
         </div>
@@ -628,12 +796,12 @@ export function AdminDashboardPage() {
       <nav className="flex flex-wrap gap-2 border-b border-gray-200 bg-gray-50 px-6 py-3 dark:border-gray-700 dark:bg-gray-950">
         {(
           [
-            ['rooms', 'Rooms'],
-            ['users', 'Users'],
-            ['comments', 'Comments'],
-            ['studentReports', 'Student reports'],
-            ['roomRatings', 'Room ratings'],
-            ['notifications', 'Notifications'],
+            ['rooms', t('dashboard.tabs.rooms')],
+            ['users', t('dashboard.tabs.users')],
+            ['comments', t('dashboard.tabs.comments')],
+            ['studentReports', t('dashboard.tabs.studentReports')],
+            ['roomRatings', t('dashboard.tabs.roomRatings')],
+            ['notifications', t('dashboard.tabs.notifications')],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -655,14 +823,14 @@ export function AdminDashboardPage() {
         {tab === 'rooms' && (
           <Card>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Rooms</h2>
+              <h2 className="text-lg font-semibold">{t('dashboard.rooms.title')}</h2>
               <Btn variant="success" onClick={openCreateRoom}>
-                + Create room
+                {t('dashboard.rooms.create')}
               </Btn>
             </div>
             <div className="mb-4 flex flex-wrap gap-3">
               <Input
-                placeholder="Search rooms..."
+                placeholder={t('dashboard.rooms.searchPlaceholder')}
                 value={roomSearch}
                 onChange={(e) => setRoomSearch(e.target.value)}
                 onBlur={() => void loadRooms()}
@@ -672,37 +840,45 @@ export function AdminDashboardPage() {
                 onChange={(e) => setRoomTypeFilter(e.target.value)}
                 onBlur={() => void loadRooms()}
               >
-                <option value="">All types</option>
-                <option value="2">2 persons</option>
-                <option value="3">3 persons</option>
-                <option value="5">5 persons</option>
-                <option value="10">10 persons</option>
+                <option value="">{t('dashboard.rooms.allTypes')}</option>
+                {ROOM_TYPE_COUNTS.map((n) => (
+                  <option key={n} value={String(n)}>
+                    {t('dashboard.rooms.persons', { count: n })}
+                  </option>
+                ))}
               </Select>
               <Btn variant="info" onClick={() => void loadRooms()}>
-                Refresh
+                {t('common.refresh')}
               </Btn>
             </div>
             {roomsState.loading ? (
-              <p className="text-text-muted">Loading…</p>
+              <p className="text-text-muted">{t('common.loading')}</p>
             ) : roomsState.error ? (
               <p className="text-red-600">{roomsState.error}</p>
             ) : !roomsData?.rooms?.length ? (
-              <p className="text-text-muted">No rooms found</p>
+              <p className="text-text-muted">{t('dashboard.rooms.noRooms')}</p>
             ) : (
               <>
                 <TableShell>
                   <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
-                      {['Arabic', 'English', 'Type', 'Cap', 'Participants', 'Created by', 'Status', ''].map(
-                        (h) => (
+                      {[
+                        t('dashboard.rooms.cols.arabic'),
+                        t('dashboard.rooms.cols.english'),
+                        t('dashboard.rooms.cols.type'),
+                        t('dashboard.rooms.cols.cap'),
+                        t('dashboard.rooms.cols.participants'),
+                        t('dashboard.rooms.cols.createdBy'),
+                        t('dashboard.rooms.cols.status'),
+                        '',
+                      ].map((h) => (
                           <th
-                            key={h}
+                            key={h || 'actions'}
                             className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted"
                           >
                             {h}
                           </th>
-                        ),
-                      )}
+                        ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
@@ -710,7 +886,9 @@ export function AdminDashboardPage() {
                       <tr key={String(room._id)} className="dark:bg-gray-800/50">
                         <td className="px-3 py-2">{escapeHtml(room.nameAr)}</td>
                         <td className="px-3 py-2">{escapeHtml(room.nameEn)}</td>
-                        <td className="px-3 py-2">{String(room.type)} persons</td>
+                        <td className="px-3 py-2">
+                          {t('dashboard.rooms.persons', { count: Number(room.type) })}
+                        </td>
                         <td className="px-3 py-2">{String(room.capacity)}</td>
                         <td className="px-3 py-2">
                           {Array.isArray(room.participants) ? room.participants.length : 0}/
@@ -721,13 +899,13 @@ export function AdminDashboardPage() {
                           typeof room.createdBy === 'object' &&
                           room.createdBy !== null
                             ? `${(room.createdBy as { firstName?: string }).firstName ?? ''} ${(room.createdBy as { lastName?: string }).lastName ?? ''}`
-                            : 'N/A'}
+                            : t('common.na')}
                         </td>
                         <td className="px-3 py-2">
                           {room.isActive ? (
-                            <span className="text-emerald-600">Active</span>
+                            <span className="text-emerald-600">{t('dashboard.rooms.active')}</span>
                           ) : (
-                            <span className="text-red-600">Inactive</span>
+                            <span className="text-red-600">{t('dashboard.rooms.inactive')}</span>
                           )}
                         </td>
                         <td className="space-x-2 px-3 py-2 whitespace-nowrap">
@@ -736,14 +914,14 @@ export function AdminDashboardPage() {
                             className="!px-2 !py-1 text-xs"
                             onClick={() => void openLiveKitRoomView(room)}
                           >
-                            View
+                            {t('dashboard.rooms.view')}
                           </Btn>
                           <Btn
                             variant="warning"
                             className="!px-2 !py-1 text-xs"
                             onClick={() => void editRoom(String(room._id))}
                           >
-                            Edit
+                            {t('dashboard.rooms.edit')}
                           </Btn>
                         </td>
                       </tr>
@@ -758,36 +936,43 @@ export function AdminDashboardPage() {
 
         {tab === 'users' && (
           <Card>
-            <h2 className="mb-4 text-lg font-semibold">Users</h2>
+            <h2 className="mb-4 text-lg font-semibold">{t('dashboard.users.title')}</h2>
             <div className="mb-4 flex flex-wrap gap-3">
               <Input
-                placeholder="Search users..."
+                placeholder={t('dashboard.users.searchPlaceholder')}
                 value={userSearch}
                 onChange={(e) => setUserSearch(e.target.value)}
                 onBlur={() => void loadUsers()}
               />
               <Select value={userRole} onChange={(e) => setUserRole(e.target.value)} onBlur={() => void loadUsers()}>
-                <option value="">All roles</option>
-                <option value="student">Student</option>
-                <option value="teacher">Teacher</option>
-                <option value="admin">Admin</option>
+                <option value="">{t('dashboard.users.allRoles')}</option>
+                <option value="student">{t('dashboard.users.student')}</option>
+                <option value="teacher">{t('dashboard.users.teacher')}</option>
+                <option value="admin">{t('dashboard.users.admin')}</option>
               </Select>
               <Btn variant="info" onClick={() => void loadUsers()}>
-                Refresh
+                {t('common.refresh')}
               </Btn>
             </div>
             {usersState.loading ? (
-              <p className="text-text-muted">Loading…</p>
+              <p className="text-text-muted">{t('common.loading')}</p>
             ) : usersState.error ? (
               <p className="text-red-600">{usersState.error}</p>
             ) : !usersData?.users?.length ? (
-              <p className="text-text-muted">No users found</p>
+              <p className="text-text-muted">{t('dashboard.users.noUsers')}</p>
             ) : (
               <>
                 <TableShell>
                   <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
-                      {['Name', 'Email', 'Role', 'Active', 'Frozen', 'Actions'].map((h) => (
+                      {[
+                        t('dashboard.users.cols.name'),
+                        t('dashboard.users.cols.email'),
+                        t('dashboard.users.cols.role'),
+                        t('dashboard.users.cols.active'),
+                        t('dashboard.users.cols.frozen'),
+                        t('dashboard.users.cols.actions'),
+                      ].map((h) => (
                         <th
                           key={h}
                           className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted"
@@ -809,8 +994,12 @@ export function AdminDashboardPage() {
                         </td>
                         <td className="px-3 py-2">{escapeHtml(user.email)}</td>
                         <td className="px-3 py-2">{escapeHtml(user.role)}</td>
-                        <td className="px-3 py-2">{user.active !== false ? 'Active' : 'Inactive'}</td>
-                        <td className="px-3 py-2">{user.isFrozen ? 'Frozen' : 'Not frozen'}</td>
+                        <td className="px-3 py-2">
+                          {user.active !== false ? t('dashboard.users.active') : t('dashboard.users.inactive')}
+                        </td>
+                        <td className="px-3 py-2">
+                          {user.isFrozen ? t('dashboard.users.frozen') : t('dashboard.users.notFrozen')}
+                        </td>
                         <td className="space-x-1 px-3 py-2" onClick={(e) => e.stopPropagation()}>
                           {user.role !== 'admin' && (
                             <>
@@ -819,11 +1008,11 @@ export function AdminDashboardPage() {
                                   variant="warning"
                                   className="!px-2 !py-1 text-xs"
                                   onClick={() => {
-                                    if (confirm('Deactivate this user?'))
+                                    if (confirm(t('dashboard.users.confirmDeactivate')))
                                       void userAction(`/deactivate/${user.id}`, 'PATCH');
                                   }}
                                 >
-                                  Deactivate
+                                  {t('dashboard.users.deactivate')}
                                 </Btn>
                               ) : (
                                 <Btn
@@ -831,7 +1020,7 @@ export function AdminDashboardPage() {
                                   className="!px-2 !py-1 text-xs"
                                   onClick={() => void userAction(`/activate/${user.id}`, 'PATCH')}
                                 >
-                                  Activate
+                                  {t('dashboard.users.activate')}
                                 </Btn>
                               )}
                             </>
@@ -841,11 +1030,11 @@ export function AdminDashboardPage() {
                               variant="warning"
                               className="!px-2 !py-1 text-xs"
                               onClick={() => {
-                                if (confirm('Freeze this user?'))
+                                if (confirm(t('dashboard.users.confirmFreeze')))
                                   void userAction(`/freeze-account/${user.id}`, 'DELETE');
                               }}
                             >
-                              Freeze
+                              {t('dashboard.users.freeze')}
                             </Btn>
                           ) : (
                             <Btn
@@ -853,7 +1042,7 @@ export function AdminDashboardPage() {
                               className="!px-2 !py-1 text-xs"
                               onClick={() => void userAction(`/unfreeze-account/${user.id}`, 'PATCH')}
                             >
-                              Unfreeze
+                              {t('dashboard.users.unfreeze')}
                             </Btn>
                           )}
                           {user.role !== 'admin' && (
@@ -861,11 +1050,11 @@ export function AdminDashboardPage() {
                               variant="danger"
                               className="!px-2 !py-1 text-xs"
                               onClick={() => {
-                                if (confirm('Delete user permanently?'))
+                                if (confirm(t('dashboard.users.confirmDelete')))
                                   void userAction(`/delete-account/${user.id}`, 'DELETE');
                               }}
                             >
-                              Delete
+                              {t('common.delete')}
                             </Btn>
                           )}
                         </td>
@@ -881,30 +1070,36 @@ export function AdminDashboardPage() {
 
         {tab === 'comments' && (
           <Card>
-            <h2 className="mb-4 text-lg font-semibold">Comments</h2>
+            <h2 className="mb-4 text-lg font-semibold">{t('dashboard.comments.title')}</h2>
             <div className="mb-4 flex flex-wrap gap-3">
               <Input
-                placeholder="Search comments..."
+                placeholder={t('dashboard.comments.searchPlaceholder')}
                 value={commentSearch}
                 onChange={(e) => setCommentSearch(e.target.value)}
                 onBlur={() => void loadComments()}
               />
               <Btn variant="info" onClick={() => void loadComments()}>
-                Refresh
+                {t('common.refresh')}
               </Btn>
             </div>
             {commentsState.loading ? (
-              <p className="text-text-muted">Loading…</p>
+              <p className="text-text-muted">{t('common.loading')}</p>
             ) : commentsState.error ? (
               <p className="text-red-600">{commentsState.error}</p>
             ) : !commentsData?.comments?.length ? (
-              <p className="text-text-muted">No comments found</p>
+              <p className="text-text-muted">{t('dashboard.comments.noComments')}</p>
             ) : (
               <>
                 <TableShell>
                   <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
-                      {['Content', 'Author', 'Post', 'Created', ''].map((h) => (
+                      {[
+                        t('dashboard.comments.cols.content'),
+                        t('dashboard.comments.cols.author'),
+                        t('dashboard.comments.cols.post'),
+                        t('dashboard.comments.cols.created'),
+                        '',
+                      ].map((h) => (
                         <th
                           key={h}
                           className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted"
@@ -927,14 +1122,14 @@ export function AdminDashboardPage() {
                         <td className="px-3 py-2">
                           {c.author && typeof c.author === 'object'
                             ? `${(c.author as { firstName?: string }).firstName ?? ''} ${(c.author as { lastName?: string }).lastName ?? ''}`
-                            : 'N/A'}
+                            : t('common.na')}
                         </td>
                         <td className="px-3 py-2 text-xs">
                           {c.postTitle
                             ? String(c.postTitle)
                             : c.postId
                               ? String(c.postId).slice(0, 8) + '…'
-                              : 'N/A'}
+                              : t('common.na')}
                         </td>
                         <td className="px-3 py-2 text-xs">
                           {c.createdAt ? new Date(String(c.createdAt)).toLocaleDateString() : ''}
@@ -945,7 +1140,7 @@ export function AdminDashboardPage() {
                             className="!px-2 !py-1 text-xs"
                             onClick={() => void deleteCommentById(String(c.id))}
                           >
-                            Delete
+                            {t('common.delete')}
                           </Btn>
                         </td>
                       </tr>
@@ -960,33 +1155,37 @@ export function AdminDashboardPage() {
 
         {tab === 'studentReports' && (
           <Card>
-            <h2 className="mb-4 text-lg font-semibold">Student reports (from live rooms)</h2>
-            <p className="mb-4 text-sm text-text-muted">
-              Teacher-written reports submitted per student in a room. Search matches report text.
-            </p>
+            <h2 className="mb-4 text-lg font-semibold">{t('dashboard.studentReports.title')}</h2>
+            <p className="mb-4 text-sm text-text-muted">{t('dashboard.studentReports.hint')}</p>
             <div className="mb-4 flex flex-wrap gap-3">
               <Input
-                placeholder="Search report text..."
+                placeholder={t('dashboard.studentReports.searchPlaceholder')}
                 value={studentReportSearch}
                 onChange={(e) => setStudentReportSearch(e.target.value)}
                 onBlur={() => void loadStudentReports()}
               />
               <Btn variant="info" onClick={() => void loadStudentReports()}>
-                Refresh
+                {t('common.refresh')}
               </Btn>
             </div>
             {studentReportsState.loading ? (
-              <p className="text-text-muted">Loading…</p>
+              <p className="text-text-muted">{t('common.loading')}</p>
             ) : studentReportsState.error ? (
               <p className="text-red-600">{studentReportsState.error}</p>
             ) : !studentReportsData?.reports?.length ? (
-              <p className="text-text-muted">No student reports found</p>
+              <p className="text-text-muted">{t('dashboard.studentReports.noReports')}</p>
             ) : (
               <>
                 <TableShell>
                   <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
-                      {['Student', 'Teacher', 'Room', 'Report', 'Date'].map((h) => (
+                      {[
+                        t('dashboard.studentReports.cols.student'),
+                        t('dashboard.studentReports.cols.teacher'),
+                        t('dashboard.studentReports.cols.room'),
+                        t('dashboard.studentReports.cols.report'),
+                        t('dashboard.studentReports.cols.date'),
+                      ].map((h) => (
                         <th
                           key={h}
                           className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted"
@@ -1052,34 +1251,37 @@ export function AdminDashboardPage() {
 
         {tab === 'roomRatings' && (
           <Card>
-            <h2 className="mb-4 text-lg font-semibold">Room ratings</h2>
-            <p className="mb-4 text-sm text-text-muted">
-              Star ratings (1–5) and optional comments left by students after a session. Search matches
-              comment text.
-            </p>
+            <h2 className="mb-4 text-lg font-semibold">{t('dashboard.roomRatings.title')}</h2>
+            <p className="mb-4 text-sm text-text-muted">{t('dashboard.roomRatings.hint')}</p>
             <div className="mb-4 flex flex-wrap gap-3">
               <Input
-                placeholder="Search comments..."
+                placeholder={t('dashboard.roomRatings.searchPlaceholder')}
                 value={roomRatingSearch}
                 onChange={(e) => setRoomRatingSearch(e.target.value)}
                 onBlur={() => void loadRoomRatings()}
               />
               <Btn variant="info" onClick={() => void loadRoomRatings()}>
-                Refresh
+                {t('common.refresh')}
               </Btn>
             </div>
             {roomRatingsState.loading ? (
-              <p className="text-text-muted">Loading…</p>
+              <p className="text-text-muted">{t('common.loading')}</p>
             ) : roomRatingsState.error ? (
               <p className="text-red-600">{roomRatingsState.error}</p>
             ) : !roomRatingsData?.ratings?.length ? (
-              <p className="text-text-muted">No room ratings found</p>
+              <p className="text-text-muted">{t('dashboard.roomRatings.noRatings')}</p>
             ) : (
               <>
                 <TableShell>
                   <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
-                      {['Student', 'Room', 'Rating', 'Comment', 'Date'].map((h) => (
+                      {[
+                        t('dashboard.roomRatings.cols.student'),
+                        t('dashboard.roomRatings.cols.room'),
+                        t('dashboard.roomRatings.cols.rating'),
+                        t('dashboard.roomRatings.cols.comment'),
+                        t('dashboard.roomRatings.cols.date'),
+                      ].map((h) => (
                         <th
                           key={h}
                           className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted"
@@ -1110,7 +1312,9 @@ export function AdminDashboardPage() {
                               ? escapeHtml(String(room.nameEn ?? room.nameAr))
                               : '—'}
                           </td>
-                          <td className="px-3 py-2 font-medium">{String(row.rating ?? '—')} / 5</td>
+                          <td className="px-3 py-2 font-medium">
+                            {t('dashboard.roomRatings.ratingOf', { rating: String(row.rating ?? '—') })}
+                          </td>
                           <td className="max-w-xl px-3 py-2 text-sm whitespace-pre-wrap">
                             {row.comment ? escapeHtml(String(row.comment)) : '—'}
                           </td>
@@ -1134,26 +1338,34 @@ export function AdminDashboardPage() {
           <div className="space-y-6">
             <Card>
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold">Push notifications</h2>
+                <h2 className="text-lg font-semibold">{t('dashboard.notifications.pushTitle')}</h2>
                 <div className="flex flex-wrap gap-2">
                   <Btn variant="success" onClick={() => openSendToUserModal()}>
-                    Send to user
+                    {t('dashboard.notifications.sendToUser')}
                   </Btn>
                   <Btn variant="warning" onClick={() => setSendAllModal(true)}>
-                    Send to all
+                    {t('dashboard.notifications.sendToAll')}
                   </Btn>
                   <Btn variant="info" onClick={() => void loadUsersWithTokens()} disabled={notifLoading}>
-                    Refresh users
+                    {t('dashboard.notifications.refreshUsers')}
                   </Btn>
                 </div>
               </div>
               {!notifUsers.length ? (
-                <p className="text-text-muted">No users with push tokens</p>
+                <p className="text-text-muted">{t('dashboard.notifications.noPushUsers')}</p>
               ) : (
                 <TableShell>
                   <thead>
                     <tr>
-                      {['User ID', 'User', 'Email', 'Platforms', 'Tokens', 'Last used', ''].map((h) => (
+                      {[
+                        t('dashboard.notifications.cols.userId'),
+                        t('dashboard.notifications.cols.user'),
+                        t('dashboard.notifications.cols.email'),
+                        t('dashboard.notifications.cols.platforms'),
+                        t('dashboard.notifications.cols.tokens'),
+                        t('dashboard.notifications.cols.lastUsed'),
+                        '',
+                      ].map((h) => (
                         <th key={h} className="px-3 py-2 text-left text-xs font-semibold text-text-muted">
                           {h}
                         </th>
@@ -1165,13 +1377,15 @@ export function AdminDashboardPage() {
                       <tr key={u.userId}>
                         <td className="max-w-[8rem] truncate px-3 py-2 font-mono text-xs">{u.userId}</td>
                         <td className="px-3 py-2">
-                          {u.user ? `${u.user.firstName ?? ''} ${u.user.lastName ?? ''}`.trim() : 'Unknown'}
+                          {u.user
+                            ? `${u.user.firstName ?? ''} ${u.user.lastName ?? ''}`.trim()
+                            : t('common.unknown')}
                         </td>
                         <td className="px-3 py-2">{u.user?.email ?? ''}</td>
                         <td className="px-3 py-2">{u.platforms?.join(', ')}</td>
                         <td className="px-3 py-2">{u.tokenCount ?? 0}</td>
                         <td className="px-3 py-2 text-xs">
-                          {u.lastUsed ? new Date(u.lastUsed).toLocaleString() : 'Never'}
+                          {u.lastUsed ? new Date(u.lastUsed).toLocaleString() : t('common.never')}
                         </td>
                         <td className="px-3 py-2">
                           <Btn
@@ -1179,7 +1393,7 @@ export function AdminDashboardPage() {
                             className="!px-2 !py-1 text-xs"
                             onClick={() => openSendToUserModal(u.userId)}
                           >
-                            Send
+                            {t('dashboard.notifications.send')}
                           </Btn>
                         </td>
                       </tr>
@@ -1190,18 +1404,26 @@ export function AdminDashboardPage() {
             </Card>
             <Card>
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Notification history</h2>
+                <h2 className="text-lg font-semibold">{t('dashboard.notifications.historyTitle')}</h2>
                 <Btn variant="info" onClick={() => void loadNotificationHistory()} disabled={notifLoading}>
-                  Refresh
+                  {t('common.refresh')}
                 </Btn>
               </div>
               {!notifHistory.length ? (
-                <p className="text-text-muted">No history</p>
+                <p className="text-text-muted">{t('dashboard.notifications.noHistory')}</p>
               ) : (
                 <TableShell>
                   <thead>
                     <tr>
-                      {['Title', 'Body', 'Type', 'Recipients', 'Success', 'Failed', 'Date'].map((h) => (
+                      {[
+                        t('dashboard.notifications.cols.title'),
+                        t('dashboard.notifications.cols.body'),
+                        t('dashboard.notifications.cols.type'),
+                        t('dashboard.notifications.cols.recipients'),
+                        t('dashboard.notifications.cols.success'),
+                        t('dashboard.notifications.cols.failed'),
+                        t('dashboard.notifications.cols.date'),
+                      ].map((h) => (
                         <th key={h} className="px-3 py-2 text-left text-xs font-semibold text-text-muted">
                           {h}
                         </th>
@@ -1244,43 +1466,48 @@ export function AdminDashboardPage() {
         />
       ) : null}
 
-      <Modal open={roomModal} onClose={() => setRoomModal(false)} title={editingRoomId ? 'Edit room' : 'Create room'}>
+      <Modal
+        open={roomModal}
+        onClose={() => setRoomModal(false)}
+        title={editingRoomId ? t('dashboard.rooms.modalEdit') : t('dashboard.rooms.modalCreate')}
+      >
         <form onSubmit={(e) => void submitRoom(e)} className="space-y-4">
-          <Field label="Arabic name *">
+          <Field label={t('dashboard.rooms.nameAr')}>
             <Input
               required
               value={roomForm.nameAr}
               onChange={(e) => setRoomForm((f) => ({ ...f, nameAr: e.target.value }))}
             />
           </Field>
-          <Field label="English name *">
+          <Field label={t('dashboard.rooms.nameEn')}>
             <Input
               required
               value={roomForm.nameEn}
               onChange={(e) => setRoomForm((f) => ({ ...f, nameEn: e.target.value }))}
             />
           </Field>
-          <Field label="Description">
+          <Field label={t('dashboard.rooms.description')}>
             <TextArea
               rows={3}
               value={roomForm.description}
               onChange={(e) => setRoomForm((f) => ({ ...f, description: e.target.value }))}
             />
           </Field>
-          <Field label="Room type *">
+          <Field label={t('dashboard.rooms.roomType')}>
             <Select
               required
               value={roomForm.type}
               onChange={(e) => setRoomForm((f) => ({ ...f, type: e.target.value }))}
             >
-              <option value="">Select</option>
-              <option value="2">2 persons</option>
-              <option value="3">3 persons</option>
-              <option value="5">5 persons</option>
-              <option value="10">10 persons</option>
+              <option value="">{t('dashboard.rooms.selectType')}</option>
+              {ROOM_TYPE_COUNTS.map((n) => (
+                <option key={n} value={String(n)}>
+                  {t('dashboard.rooms.persons', { count: n })}
+                </option>
+              ))}
             </Select>
           </Field>
-          <Field label="Participant user IDs (comma-separated)">
+          <Field label={t('dashboard.rooms.participantIds')}>
             <Input
               value={roomForm.participants}
               onChange={(e) => setRoomForm((f) => ({ ...f, participants: e.target.value }))}
@@ -1288,36 +1515,234 @@ export function AdminDashboardPage() {
           </Field>
           <div className="flex justify-end gap-2">
             <Btn variant="secondary" type="button" onClick={() => setRoomModal(false)}>
-              Cancel
+              {t('common.cancel')}
             </Btn>
             <Btn variant="primary" type="submit">
-              Save
+              {t('common.save')}
             </Btn>
           </div>
         </form>
       </Modal>
 
-      <Modal open={!!userModal} onClose={() => setUserModal(null)} title="User details" wide>
+      <Modal open={!!userModal} onClose={() => setUserModal(null)} title={t('dashboard.users.detailTitle')} wide>
         {!userDetail ? (
-          <p>Loading…</p>
+          <p>{t('common.loading')}</p>
         ) : (
-          <div className="space-y-2 text-sm">
-            <p>
-              <strong>Name:</strong> {String(userDetail.firstName)} {String(userDetail.lastName)}
-            </p>
-            <p>
-              <strong>Email:</strong> {String(userDetail.email ?? '')}
-            </p>
-            <p>
-              <strong>Role:</strong> {String(userDetail.role ?? '')}
-            </p>
-            <p>
-              <strong>Phone:</strong> {String(userDetail.phone ?? '')}
-            </p>
-            <p>
-              <strong>Created:</strong>{' '}
-              {userDetail.createdAt ? new Date(String(userDetail.createdAt)).toLocaleString() : ''}
-            </p>
+          <div className="space-y-6 text-sm">
+            <div className="space-y-2">
+              <p>
+                <strong>{t('dashboard.users.name')}:</strong> {String(userDetail.firstName)}{' '}
+                {String(userDetail.lastName)}
+              </p>
+              <p>
+                <strong>{t('dashboard.users.email')}:</strong> {String(userDetail.email ?? '')}
+              </p>
+              <p>
+                <strong>{t('dashboard.users.role')}:</strong> {String(userDetail.role ?? '')}
+              </p>
+              <p>
+                <strong>{t('dashboard.users.phone')}:</strong> {String(userDetail.phone ?? '')}
+              </p>
+              {userDetail.age != null && String(userDetail.age) !== '' ? (
+                <p>
+                  <strong>{t('dashboard.users.age')}:</strong> {String(userDetail.age)}
+                </p>
+              ) : null}
+              <p>
+                <strong>{t('dashboard.users.created')}:</strong>{' '}
+                {userDetail.createdAt ? new Date(String(userDetail.createdAt)).toLocaleString() : ''}
+              </p>
+            </div>
+
+            {signupEdit ? (
+              <div className="border-t border-gray-200 pt-4 dark:border-gray-700">
+                <p className="mb-1 font-semibold text-text-secondary">{t('dashboard.users.signupSection')}</p>
+                <p className="mb-4 text-xs text-text-muted">{t('dashboard.users.signupHint')}</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label={t('dashboard.users.signupUserType')}>
+                    <Select
+                      value={signupEdit.userType}
+                      onChange={(e) =>
+                        setSignupEdit((s) =>
+                          s
+                            ? {
+                                ...s,
+                                userType: e.target.value as AdminSignupDraft['userType'],
+                              }
+                            : s,
+                        )
+                      }
+                    >
+                      <option value="">{t('dashboard.users.signupUserTypeUnset')}</option>
+                      <option value="male">{t('dashboard.users.signupUserTypeMale')}</option>
+                      <option value="female">{t('dashboard.users.signupUserTypeFemale')}</option>
+                      <option value="children">{t('dashboard.users.signupUserTypeChildren')}</option>
+                    </Select>
+                  </Field>
+                  <Field label={t('dashboard.users.signupDateOfBirth')}>
+                    <Input
+                      type="date"
+                      value={signupEdit.dateOfBirth}
+                      onChange={(e) =>
+                        setSignupEdit((s) => (s ? { ...s, dateOfBirth: e.target.value } : s))
+                      }
+                    />
+                  </Field>
+                  <Field label={t('dashboard.users.signupLanguageTag')}>
+                    <Input
+                      value={signupEdit.languageTag}
+                      onChange={(e) =>
+                        setSignupEdit((s) => (s ? { ...s, languageTag: e.target.value } : s))
+                      }
+                    />
+                  </Field>
+                  <Field label={t('dashboard.users.signupPreferredLanguage')}>
+                    <Input
+                      value={signupEdit.preferredLanguage}
+                      onChange={(e) =>
+                        setSignupEdit((s) =>
+                          s ? { ...s, preferredLanguage: e.target.value } : s,
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field label={t('dashboard.users.signupNationality')}>
+                    <Input
+                      value={signupEdit.nationality}
+                      onChange={(e) =>
+                        setSignupEdit((s) => (s ? { ...s, nationality: e.target.value } : s))
+                      }
+                    />
+                  </Field>
+                  <Field label={t('dashboard.users.signupCountryResidence')}>
+                    <Input
+                      value={signupEdit.countryResidence}
+                      onChange={(e) =>
+                        setSignupEdit((s) =>
+                          s ? { ...s, countryResidence: e.target.value } : s,
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field label={t('dashboard.users.signupMotherTongue')}>
+                    <Input
+                      value={signupEdit.motherTongue}
+                      onChange={(e) =>
+                        setSignupEdit((s) =>
+                          s ? { ...s, motherTongue: e.target.value } : s,
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field label={t('dashboard.users.signupMemorizedQuran')}>
+                    <Select
+                      value={signupEdit.memorizedQuran}
+                      onChange={(e) =>
+                        setSignupEdit((s) =>
+                          s ? { ...s, memorizedQuran: e.target.value } : s,
+                        )
+                      }
+                    >
+                      {signupQuizSelectOptions(SIGNUP_QUIZ_MEMORIZED, signupEdit.memorizedQuran, t).map((o) => (
+                        <option key={o.value || '__unset'} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label={t('dashboard.users.signupAmount')}>
+                    <Select
+                      value={signupEdit.amount}
+                      onChange={(e) =>
+                        setSignupEdit((s) => (s ? { ...s, amount: e.target.value } : s))
+                      }
+                    >
+                      {signupQuizSelectOptions(SIGNUP_QUIZ_AMOUNT, signupEdit.amount, t).map((o) => (
+                        <option key={o.value || '__unset'} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label={t('dashboard.users.signupProgram')}>
+                    <Select
+                      value={signupEdit.program}
+                      onChange={(e) =>
+                        setSignupEdit((s) =>
+                          s
+                            ? {
+                                ...s,
+                                program: e.target.value,
+                                ...(SIGNUP_PROGRAM_SKIPS_AMOUNT_WEEKLY_SURAH.has(e.target.value)
+                                  ? { amount: '', weekly: '', surah: '' }
+                                  : {}),
+                              }
+                            : s,
+                        )
+                      }
+                    >
+                      {signupQuizSelectOptions(SIGNUP_QUIZ_PROGRAM, signupEdit.program, t).map((o) => (
+                        <option key={o.value || '__unset'} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label={t('dashboard.users.signupWeekly')}>
+                    <Select
+                      value={signupEdit.weekly}
+                      onChange={(e) =>
+                        setSignupEdit((s) => (s ? { ...s, weekly: e.target.value } : s))
+                      }
+                    >
+                      {signupQuizSelectOptions(SIGNUP_QUIZ_WEEKLY, signupEdit.weekly, t).map((o) => (
+                        <option key={o.value || '__unset'} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label={t('dashboard.users.signupSurah')}>
+                    <Select
+                      value={signupEdit.surah}
+                      onChange={(e) =>
+                        setSignupEdit((s) => (s ? { ...s, surah: e.target.value } : s))
+                      }
+                    >
+                      {signupQuizSelectOptions(SIGNUP_QUIZ_SURAH, signupEdit.surah, t).map((o) => (
+                        <option key={o.value || '__unset'} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label={t('dashboard.users.signupPlan')} className="sm:col-span-2">
+                    <Select
+                      value={signupEdit.signupPlan}
+                      onChange={(e) =>
+                        setSignupEdit((s) => (s ? { ...s, signupPlan: e.target.value } : s))
+                      }
+                    >
+                      {signupQuizSelectOptions(SIGNUP_QUIZ_PLAN, signupEdit.signupPlan, t).map((o) => (
+                        <option key={o.value || '__unset'} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <Btn
+                    type="button"
+                    variant="primary"
+                    disabled={signupSaving || !adminToken}
+                    onClick={() => void saveSignupOptions()}
+                  >
+                    {signupSaving ? t('common.loading') : t('dashboard.users.signupSave')}
+                  </Btn>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
       </Modal>
@@ -1325,35 +1750,36 @@ export function AdminDashboardPage() {
       <Modal
         open={!!commentModal}
         onClose={() => setCommentModal(null)}
-        title="Comment details"
+        title={t('dashboard.comments.detailTitle')}
         wide
       >
         {!commentDetail ? (
-          <p>Loading…</p>
+          <p>{t('common.loading')}</p>
         ) : (
           <div className="space-y-3 text-sm">
             <p className="whitespace-pre-wrap">{String(commentDetail.content ?? '')}</p>
             <Btn variant="danger" onClick={() => void deleteCommentById(String(commentDetail.id))}>
-              Delete comment
+              {t('dashboard.comments.deleteComment')}
             </Btn>
           </div>
         )}
       </Modal>
 
-      <Modal open={sendModal} onClose={closeSendModal} title="Send notification" wide>
+      <Modal open={sendModal} onClose={closeSendModal} title={t('dashboard.notifications.modalSendTitle')} wide>
         <form onSubmit={(e) => void submitNotification(e)} className="space-y-4">
           {!notifForm.sendToMultiple ? (
-            <Field label="Recipients *">
+            <Field label={t('dashboard.notifications.recipients')}>
               <Input
-                placeholder="Search by name, email, or user ID…"
+                placeholder={t('dashboard.notifications.searchRecipients')}
                 value={notifRecipientQuery}
                 onChange={(e) => setNotifRecipientQuery(e.target.value)}
                 className="mb-2"
               />
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs text-text-muted">
-                  <strong>{selectedRecipientIds.length}</strong> selected · up to 200 per search ·{' '}
-                  <span className="text-text-secondary">Push</span> = device registered for push.
+                  {t('dashboard.notifications.selectedCount', { count: selectedRecipientIds.length })}{' '}
+                  <span className="text-text-secondary">{t('dashboard.notifications.pushBadge')}</span>{' '}
+                  {t('dashboard.notifications.pushHint')}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Btn
@@ -1365,7 +1791,7 @@ export function AdminDashboardPage() {
                       setSelectedRecipientIds(recipientPickerUsers.map((u) => String(u.id)))
                     }
                   >
-                    Select all shown
+                    {t('dashboard.notifications.selectAllShown')}
                   </Btn>
                   <Btn
                     type="button"
@@ -1374,23 +1800,21 @@ export function AdminDashboardPage() {
                     disabled={!selectedRecipientIds.length}
                     onClick={() => setSelectedRecipientIds([])}
                   >
-                    Clear selection
+                    {t('dashboard.notifications.clearSelection')}
                   </Btn>
                 </div>
               </div>
               <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700">
                 {recipientPickerLoading ? (
-                  <p className="p-3 text-sm text-text-muted">Loading users…</p>
+                  <p className="p-3 text-sm text-text-muted">{t('dashboard.notifications.loadingUsers')}</p>
                 ) : recipientPickerUsers.length === 0 ? (
-                  <p className="p-3 text-sm text-text-muted">
-                    No users found. Try another search or check the Users tab.
-                  </p>
+                  <p className="p-3 text-sm text-text-muted">{t('dashboard.notifications.noUsersFound')}</p>
                 ) : (
                   <ul className="divide-y divide-gray-200 dark:divide-gray-700">
                     {recipientPickerUsers.map((row) => {
                       const uid = String(row.id);
                       const displayName =
-                        `${row.firstName ?? ''} ${row.lastName ?? ''}`.trim() || '(No name)';
+                        `${row.firstName ?? ''} ${row.lastName ?? ''}`.trim() || t('common.noName');
                       const checked = selectedRecipientIds.includes(uid);
                       const hasPush = pushTokenUserIds.has(uid);
                       return (
@@ -1413,13 +1837,13 @@ export function AdminDashboardPage() {
                                 {displayName}
                                 {hasPush ? (
                                   <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
-                                    Push
+                                    {t('dashboard.notifications.pushBadge')}
                                   </span>
                                 ) : null}
                               </span>
                               <span className="text-xs text-text-muted">{row.email ?? '—'}</span>
                               <span className="font-mono text-xs text-text-secondary">
-                                ID: {uid}
+                                {t('dashboard.notifications.idPrefix', { id: uid })}
                                 {row.role != null && String(row.role).length > 0 ? (
                                   <span className="ml-2 font-sans text-text-muted">
                                     · {String(row.role)}
@@ -1437,9 +1861,7 @@ export function AdminDashboardPage() {
             </Field>
           ) : (
             <p className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-text-secondary dark:border-gray-600 dark:bg-gray-900">
-              Sends to{' '}
-              <strong>{notifUsers.length}</strong> user{notifUsers.length === 1 ? '' : 's'} who have push
-              tokens (no recipient pick).
+              {t('dashboard.notifications.bulkPushHint', { count: notifUsers.length })}
             </p>
           )}
           <label className="flex cursor-pointer items-start gap-2 text-sm">
@@ -1457,18 +1879,16 @@ export function AdminDashboardPage() {
                 if (on) setSelectedRecipientIds([]);
               }}
             />
-            <span>
-              Send to <strong>all</strong> users with push tokens (bulk — hides the checklist above)
-            </span>
+            <span>{t('dashboard.notifications.bulkCheckbox')}</span>
           </label>
-          <Field label="Title *">
+          <Field label={t('dashboard.notifications.titleField')}>
             <Input
               required
               value={notifForm.title}
               onChange={(e) => setNotifForm((f) => ({ ...f, title: e.target.value }))}
             />
           </Field>
-          <Field label="Body *">
+          <Field label={t('dashboard.notifications.bodyField')}>
             <TextArea
               required
               rows={4}
@@ -1476,41 +1896,41 @@ export function AdminDashboardPage() {
               onChange={(e) => setNotifForm((f) => ({ ...f, body: e.target.value }))}
             />
           </Field>
-          <Field label="Type">
+          <Field label={t('dashboard.notifications.typeField')}>
             <Select
               value={notifForm.type}
               onChange={(e) => setNotifForm((f) => ({ ...f, type: e.target.value }))}
             >
-              <option value="general">General</option>
-              <option value="chat">Chat</option>
-              <option value="auction">Auction</option>
-              <option value="order">Order</option>
+              <option value="general">{t('dashboard.notifications.types.general')}</option>
+              <option value="chat">{t('dashboard.notifications.types.chat')}</option>
+              <option value="auction">{t('dashboard.notifications.types.auction')}</option>
+              <option value="order">{t('dashboard.notifications.types.order')}</option>
             </Select>
           </Field>
           <div className="flex justify-end gap-2">
             <Btn type="button" variant="secondary" onClick={closeSendModal}>
-              Cancel
+              {t('common.cancel')}
             </Btn>
             <Btn type="submit" variant="primary">
-              Send
+              {t('dashboard.notifications.send')}
             </Btn>
           </div>
         </form>
       </Modal>
 
-      <Modal open={sendAllModal} onClose={() => setSendAllModal(false)} title="Send to all users">
+      <Modal open={sendAllModal} onClose={() => setSendAllModal(false)} title={t('dashboard.notifications.sendAllTitle')}>
         <form onSubmit={(e) => void submitSendToAll(e)} className="space-y-4">
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
-            This sends to all users in the database. This cannot be undone.
+            {t('dashboard.notifications.sendAllWarning')}
           </div>
-          <Field label="Title *">
+          <Field label={t('dashboard.notifications.titleField')}>
             <Input
               required
               value={sendAllForm.title}
               onChange={(e) => setSendAllForm((f) => ({ ...f, title: e.target.value }))}
             />
           </Field>
-          <Field label="Body *">
+          <Field label={t('dashboard.notifications.bodyField')}>
             <TextArea
               required
               rows={4}
@@ -1518,23 +1938,23 @@ export function AdminDashboardPage() {
               onChange={(e) => setSendAllForm((f) => ({ ...f, body: e.target.value }))}
             />
           </Field>
-          <Field label="Type">
+          <Field label={t('dashboard.notifications.typeField')}>
             <Select
               value={sendAllForm.type}
               onChange={(e) => setSendAllForm((f) => ({ ...f, type: e.target.value }))}
             >
-              <option value="general">General</option>
-              <option value="chat">Chat</option>
-              <option value="auction">Auction</option>
-              <option value="order">Order</option>
+              <option value="general">{t('dashboard.notifications.types.general')}</option>
+              <option value="chat">{t('dashboard.notifications.types.chat')}</option>
+              <option value="auction">{t('dashboard.notifications.types.auction')}</option>
+              <option value="order">{t('dashboard.notifications.types.order')}</option>
             </Select>
           </Field>
           <div className="flex justify-end gap-2">
             <Btn type="button" variant="secondary" onClick={() => setSendAllModal(false)}>
-              Cancel
+              {t('common.cancel')}
             </Btn>
             <Btn type="submit" variant="warning">
-              Send to all
+              {t('dashboard.notifications.sendToAll')}
             </Btn>
           </div>
         </form>

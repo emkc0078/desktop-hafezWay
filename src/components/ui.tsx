@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react';
+import { useT } from '@/context/LocaleContext';
 
 export function Card({
   children,
@@ -53,6 +54,7 @@ export function MessageBanner({
   type: 'success' | 'error' | 'info';
   onDismiss?: () => void;
 }) {
+  const t = useT();
   const bg =
     type === 'success'
       ? 'bg-emerald-600'
@@ -68,7 +70,7 @@ export function MessageBanner({
         <span>{text}</span>
         {onDismiss && (
           <button type="button" className="shrink-0 underline" onClick={onDismiss}>
-            Dismiss
+            {t('common.dismiss')}
           </button>
         )}
       </div>

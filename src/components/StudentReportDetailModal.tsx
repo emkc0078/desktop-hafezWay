@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useT } from '@/context/LocaleContext';
 import { Btn, Field, Modal, Select, TableShell } from '@/components/ui';
 import { adminFetchJson } from '@/utils/adminFetch';
 import { escapeHtml } from '@/utils/escapeHtml';
@@ -64,6 +65,7 @@ export function StudentReportDetailModal(props: {
   adminToken: string;
 }) {
   const { open, onClose, sessionRow, serverUrl, adminToken } = props;
+  const t = useT();
 
   const now = useMemo(() => new Date(), []);
   const [year, setYear] = useState(() => now.getFullYear());
@@ -119,17 +121,17 @@ export function StudentReportDetailModal(props: {
     : '';
 
   return (
-    <Modal open={open && !!sessionRow} onClose={onClose} title="Student report" maxWidthClass="max-w-5xl">
+    <Modal open={open && !!sessionRow} onClose={onClose} title={t('studentReport.title')} maxWidthClass="max-w-5xl">
       <div className="mx-auto w-full max-w-3xl space-y-8">
         <section>
           <h4 className="mb-3 text-center text-xl font-bold text-neutral-900 dark:text-gray-100">
-            Live session report
+            {t('studentReport.liveSessionReport')}
           </h4>
           <div className="rounded-[20px] p-4" style={{ backgroundColor: MINT_BG }}>
             <div className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 text-sm dark:border-gray-600 dark:bg-gray-900">
               <div className="grid gap-2 sm:grid-cols-2">
                 <div>
-                  <span className="font-semibold text-text-muted">Student</span>
+                  <span className="font-semibold text-text-muted">{t('studentReport.student')}</span>
                   <p className="text-neutral-900 dark:text-gray-100">
                     {escapeHtml(displayName(sessionRow.student))}
                   </p>
@@ -138,22 +140,22 @@ export function StudentReportDetailModal(props: {
                   ) : null}
                 </div>
                 <div>
-                  <span className="font-semibold text-text-muted">Teacher</span>
+                  <span className="font-semibold text-text-muted">{t('studentReport.teacher')}</span>
                   <p className="text-neutral-900 dark:text-gray-100">
                     {escapeHtml(displayName(sessionRow.teacher))}
                   </p>
                 </div>
                 <div>
-                  <span className="font-semibold text-text-muted">Room</span>
+                  <span className="font-semibold text-text-muted">{t('studentReport.room')}</span>
                   <p className="text-neutral-900 dark:text-gray-100">{escapeHtml(String(roomTitle))}</p>
                 </div>
                 <div>
-                  <span className="font-semibold text-text-muted">Submitted</span>
+                  <span className="font-semibold text-text-muted">{t('studentReport.submitted')}</span>
                   <p className="text-neutral-900 dark:text-gray-100">{sessionDate || '—'}</p>
                 </div>
               </div>
               <div className="border-t border-gray-200 pt-3 dark:border-gray-600">
-                <span className="font-semibold text-text-muted">Report</span>
+                <span className="font-semibold text-text-muted">{t('studentReport.report')}</span>
                 <p className="mt-2 whitespace-pre-wrap text-neutral-800 dark:text-gray-200">
                   {escapeHtml(String(sessionRow.reportText ?? '')) || '—'}
                 </p>
@@ -164,20 +166,20 @@ export function StudentReportDetailModal(props: {
 
         <section>
           <h4 className="mb-2 text-center text-xl font-bold text-neutral-900 dark:text-gray-100">
-            Monthly student report
+            {t('studentReport.monthlyStudentReport')}
           </h4>
           <p className="mb-4 text-center text-lg font-bold text-neutral-900 dark:text-gray-100">
-            Report for {monthLong}
+            {t('studentReport.reportFor', { month: monthLong })}
           </p>
 
           {!studentId ? (
             <p className="text-center text-sm text-amber-700 dark:text-amber-300">
-              No student id on this row — monthly sheet unavailable.
+              {t('studentReport.noStudentId')}
             </p>
           ) : (
             <>
               <div className="mb-4 flex flex-wrap items-end gap-3">
-                <Field label="Year" className="w-28">
+                <Field label={t('studentReport.year')} className="w-28">
                   <Select value={String(year)} onChange={(e) => setYear(Number(e.target.value))}>
                     {yearOptions.map((y) => (
                       <option key={y} value={y}>
@@ -186,7 +188,7 @@ export function StudentReportDetailModal(props: {
                     ))}
                   </Select>
                 </Field>
-                <Field label="Month" className="min-w-[12rem]">
+                <Field label={t('studentReport.month')} className="min-w-[12rem]">
                   <Select value={String(month)} onChange={(e) => setMonth(Number(e.target.value))}>
                     {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                       <option key={m} value={m}>
@@ -196,7 +198,7 @@ export function StudentReportDetailModal(props: {
                   </Select>
                 </Field>
                 <Btn variant="info" type="button" onClick={() => void loadMonthly()} disabled={monthlyLoading}>
-                  {monthlyLoading ? 'Loading…' : 'Reload'}
+                  {monthlyLoading ? t('common.loading') : t('studentReport.reload')}
                 </Btn>
               </div>
 
@@ -207,7 +209,7 @@ export function StudentReportDetailModal(props: {
               ) : null}
 
               {monthlyLoading && !monthly ? (
-                <p className="text-text-muted">Loading monthly report…</p>
+                <p className="text-text-muted">{t('studentReport.loadingMonthly')}</p>
               ) : (
                 <>
                   <div className="rounded-[20px] p-4" style={{ backgroundColor: MINT_BG }}>
@@ -215,17 +217,19 @@ export function StudentReportDetailModal(props: {
                       <thead>
                         <tr className="bg-gray-50 dark:bg-gray-900">
                           <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted">
-                            Week
+                            {t('studentReport.week')}
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted">Day</th>
-                          <th className="px-3 py-2 text-center text-xs font-semibold uppercase text-text-muted">
-                            Attendance
-                          </th>
-                          <th className="px-3 py-2 text-center text-xs font-semibold uppercase text-text-muted">
-                            Preservation
+                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted">
+                            {t('studentReport.day')}
                           </th>
                           <th className="px-3 py-2 text-center text-xs font-semibold uppercase text-text-muted">
-                            Tajweed
+                            {t('studentReport.attendance')}
+                          </th>
+                          <th className="px-3 py-2 text-center text-xs font-semibold uppercase text-text-muted">
+                            {t('studentReport.preservation')}
+                          </th>
+                          <th className="px-3 py-2 text-center text-xs font-semibold uppercase text-text-muted">
+                            {t('studentReport.tajweed')}
                           </th>
                         </tr>
                       </thead>
@@ -239,7 +243,7 @@ export function StudentReportDetailModal(props: {
                           return (
                             <tr key={w}>
                               <td className="px-3 py-3 text-[13px] font-semibold text-neutral-900 dark:text-gray-100">
-                                Week {w}
+                                {t('studentReport.weekN', { n: w })}
                               </td>
                               <td className="px-3 py-3 text-center text-sm text-neutral-900 dark:text-gray-100">
                                 {dayLabel}
@@ -261,7 +265,9 @@ export function StudentReportDetailModal(props: {
                   </div>
 
                   <div className="mt-4">
-                    <p className="mb-2 text-lg font-bold text-neutral-900 dark:text-gray-100">Teacher notes</p>
+                    <p className="mb-2 text-lg font-bold text-neutral-900 dark:text-gray-100">
+                      {t('studentReport.teacherNotes')}
+                    </p>
                     <div className="min-h-[120px] rounded-[14px] border border-gray-200 bg-white p-3 text-[15px] leading-relaxed text-neutral-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200">
                       {monthly?.teacherNotes?.trim()
                         ? escapeHtml(monthly.teacherNotes)

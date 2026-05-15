@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAdminSettings } from '@/context/AdminSettingsContext';
+import { useT } from '@/context/LocaleContext';
 import { AdminAuthBar } from '@/components/AdminAuthBar';
 import { HttpLogsPanel } from '@/app/logs/HttpLogsPanel';
 import { BackupPanel } from '@/app/logs/BackupPanel';
@@ -10,32 +11,36 @@ type Tab = 'logs' | 'backup' | 'redis' | 'socket';
 
 export function LogsViewerPage() {
   const { logsApiBase } = useAdminSettings();
+  const t = useT();
 
   const [tab, setTab] = useState<Tab>('logs');
+
+  const tabs: { id: Tab; labelKey: string }[] = [
+    { id: 'logs', labelKey: 'logsPage.tabs.logs' },
+    { id: 'backup', labelKey: 'logsPage.tabs.backup' },
+    { id: 'redis', labelKey: 'logsPage.tabs.redis' },
+    { id: 'socket', labelKey: 'logsPage.tabs.socket' },
+  ];
 
   return (
     <div className="min-h-full">
       <header className="border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5">
           <div>
-            <h1 className="text-xl font-semibold">System & logs</h1>
+            <h1 className="text-xl font-semibold">{t('logsPage.title')}</h1>
             <p className="text-sm text-text-muted">
-              API: <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">{logsApiBase}</code>
+              {t('logsPage.apiLabel')}{' '}
+              <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">{logsApiBase}</code>
             </p>
           </div>
-          <AdminAuthBar showTestHint />
+          <div className="min-w-0 w-full">
+            <AdminAuthBar showTestHint />
+          </div>
         </div>
       </header>
 
       <nav className="flex flex-wrap gap-2 border-b border-gray-200 bg-gray-50 px-6 py-3 dark:border-gray-700 dark:bg-gray-950">
-        {(
-          [
-            ['logs', 'HTTP logs'],
-            ['backup', 'Backup'],
-            ['redis', 'Redis'],
-            ['socket', 'Socket.IO'],
-          ] as const
-        ).map(([id, label]) => (
+        {tabs.map(({ id, labelKey }) => (
           <button
             key={id}
             type="button"
@@ -46,7 +51,7 @@ export function LogsViewerPage() {
                 : 'bg-white text-text-secondary shadow-sm dark:bg-gray-800 dark:text-gray-200'
             }`}
           >
-            {label}
+            {t(labelKey)}
           </button>
         ))}
       </nav>

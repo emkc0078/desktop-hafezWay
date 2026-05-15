@@ -1,6 +1,7 @@
-const { app, BrowserWindow, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const useViteDevServer =
   process.env.NODE_ENV === 'development' && !app.isPackaged;
@@ -79,6 +80,227 @@ ipcMain.handle('admin:run-local-mongo-images-pull', async () => {
       resolve({ ok: true, stdout, stderr });
     });
   });
+});
+
+// ---------- Restore-from-backup support ----------
+
+function configsArchiveSearchDirs() {
+  const dirs = [
+    path.join(process.cwd(), 'backups', 'hafezway-server'),
+    path.join(app.getPath('downloads'), 'hafezway-backups'),
+    path.join(app.getPath('downloads'), 'hafezway-server'),
+  ];
+  return dirs.filter((d) => {
+    try {
+      return fs.statSync(d).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+}
+
+ipcMain.handle('admin:list-local-configs-archives', () => {
+  const dirs = configsArchiveSearchDirs();
+  const out = [];
+  for (const dir of dirs) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      // Match the names produced by server-backup.sh: configs_YYYY-MM-DD.tar.gz
+      // Also accept the broader "configs*.tar.gz" pattern in case of renames.
+      if (!/^configs.*\.tar\.gz$/i.test(name)) continue;
+      const abs = path.join(dir, name);
+      let st;
+      try {
+        st = fs.statSync(abs);
+      } catch {
+        continue;
+      }
+      if (!st.isFile()) continue;
+      out.push({
+        path: abs,
+        fileName: name,
+        dir,
+        sizeMB: (st.size / (1024 * 1024)).toFixed(2),
+        mtime: st.mtime.toISOString().replace('T', ' ').split('.')[0],
+        mtimeMs: st.mtimeMs,
+      });
+    }
+  }
+  out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return { dirs, archives: out };
+});
+
+ipcMain.handle('admin:pick-configs-archive', async () => {
+  const candidates = configsArchiveSearchDirs();
+  const defaultPath = candidates[0] || app.getPath('downloads');
+  const result = await dialog.showOpenDialog({
+    title: 'Select a backup archive (configs_*.tar.gz)',
+    defaultPath,
+    properties: ['openFile'],
+    filters: [
+      { name: 'Backup archive', extensions: ['tar.gz', 'tgz'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  if (result.canceled || !result.filePaths.length) {
+    return { ok: false, canceled: true };
+  }
+  const filePath = result.filePaths[0];
+  let sizeMB = '';
+  try {
+    sizeMB = (fs.statSync(filePath).size / (1024 * 1024)).toFixed(2);
+  } catch {
+    // ignore
+  }
+  return {
+    ok: true,
+    canceled: false,
+    path: filePath,
+    fileName: path.basename(filePath),
+    sizeMB,
+  };
+});
+
+const SAFE_SERVER_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$/;
+const SAFE_OWNER_RE = /^[A-Za-z0-9._-]+$/;
+const VALID_ONLY = new Set(['all', 'env', 'nginx']);
+
+ipcMain.handle('admin:run-restore-on-server', async (_evt, rawOpts) => {
+  const opts = rawOpts && typeof rawOpts === 'object' ? rawOpts : {};
+  const archivePath = typeof opts.archivePath === 'string' ? opts.archivePath : '';
+  const server = typeof opts.server === 'string' ? opts.server.trim() : '';
+  const only = typeof opts.only === 'string' ? opts.only : 'all';
+  const dryRun = opts.dryRun === true;
+  const noReload = opts.noReload === true;
+  const envOwner = typeof opts.envOwner === 'string' ? opts.envOwner.trim() : '';
+
+  if (!archivePath || !fs.existsSync(archivePath)) {
+    return { ok: false, error: `Archive not found: ${archivePath}` };
+  }
+  if (!SAFE_SERVER_RE.test(server)) {
+    return { ok: false, error: `Invalid server target. Expected user@host (got: "${server}")` };
+  }
+  if (!VALID_ONLY.has(only)) {
+    return { ok: false, error: `Invalid "only" value: ${only}` };
+  }
+  if (envOwner && !SAFE_OWNER_RE.test(envOwner)) {
+    return { ok: false, error: `Invalid env owner: ${envOwner}` };
+  }
+
+  const scriptPath = path.join(process.cwd(), 'scripts', 'hafezway-backup', 'restore-on-server.sh');
+  if (!fs.existsSync(scriptPath)) {
+    return { ok: false, error: `Restore script not found at ${scriptPath}` };
+  }
+  let scriptBuffer;
+  try {
+    scriptBuffer = fs.readFileSync(scriptPath);
+  } catch (e) {
+    return { ok: false, error: `Could not read script: ${e.message || e}` };
+  }
+
+  const { execFile, spawn } = await import('node:child_process');
+
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const remoteInbox = `/tmp/hafezway_restore_inbox_${ts}.tar.gz`;
+
+  const scpResult = await new Promise((resolve) => {
+    execFile(
+      'scp',
+      ['-q', archivePath, `${server}:${remoteInbox}`],
+      { windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          resolve({ ok: false, stdout, stderr, error: stderr || error.message || 'scp failed' });
+        } else {
+          resolve({ ok: true, stdout, stderr });
+        }
+      },
+    );
+  });
+
+  if (!scpResult.ok) {
+    return {
+      ok: false,
+      step: 'scp',
+      error: `Upload failed: ${scpResult.error}`,
+      stdout: scpResult.stdout || '',
+      stderr: scpResult.stderr || '',
+    };
+  }
+
+  const envParts = [
+    `ONLY=${only}`,
+    `DRY_RUN=${dryRun ? 1 : 0}`,
+    `NO_RELOAD=${noReload ? 1 : 0}`,
+  ];
+  if (envOwner) envParts.push(`ENV_OWNER=${envOwner}`);
+
+  // Wrap so we always clean the uploaded file, even on failure. The script's
+  // exit code is preserved via $? before rm runs.
+  const remoteCommand =
+    `${envParts.join(' ')} bash -s -- ${remoteInbox}; ` +
+    `__rc=$?; rm -f ${remoteInbox} || true; exit $__rc`;
+
+  const sshResult = await new Promise((resolve) => {
+    const child = spawn('ssh', [server, remoteCommand], {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => {
+      stdout += d.toString('utf8');
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d.toString('utf8');
+    });
+    child.on('error', (err) => {
+      resolve({
+        ok: false,
+        exitCode: null,
+        stdout,
+        stderr,
+        error: err.message || 'ssh failed',
+      });
+    });
+    child.on('close', (code) => {
+      resolve({
+        ok: code === 0,
+        exitCode: code,
+        stdout,
+        stderr,
+        error: code === 0 ? undefined : `Restore exited with code ${code}`,
+      });
+    });
+    try {
+      child.stdin.write(scriptBuffer);
+      child.stdin.end();
+    } catch (e) {
+      resolve({
+        ok: false,
+        exitCode: null,
+        stdout,
+        stderr,
+        error: `Could not pipe script: ${e.message || e}`,
+      });
+    }
+  });
+
+  return {
+    ok: sshResult.ok,
+    step: sshResult.ok ? 'done' : 'ssh',
+    exitCode: sshResult.exitCode,
+    stdout: sshResult.stdout,
+    stderr: sshResult.stderr,
+    error: sshResult.error,
+    remoteInbox,
+    homeHint: os.homedir(),
+  };
 });
 
 function createWindow() {
