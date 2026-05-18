@@ -3,13 +3,32 @@ import { useAdminSettings } from '@/context/AdminSettingsContext';
 import { useT } from '@/context/LocaleContext';
 import { AdminAuthBar } from '@/components/AdminAuthBar';
 import { adminFetchJson } from '@/utils/adminFetch';
+import { reportAdminApiError } from '@/utils/adminSession';
 import { escapeHtml } from '@/utils/escapeHtml';
 import { buildLivekitRoomViewUrl } from '@/utils/livekitRoomUrl';
 import {
   StudentReportDetailModal,
   type SessionStudentReportRow,
 } from '@/components/StudentReportDetailModal';
-import { Btn, Card, Field, Input, MessageBanner, Modal, Select, TableShell, TextArea } from '@/components/ui';
+import { RoomParticipantsCell } from '@/components/RoomParticipantsCell';
+import {
+  Btn,
+  Card,
+  Field,
+  Input,
+  MessageBanner,
+  Modal,
+  Select,
+  TableShell,
+  tableCellClass,
+  tableHeadClass,
+  TextArea,
+} from '@/components/ui';
+import {
+  RoomListStatus,
+  RoomScheduleDay,
+  ROOM_SCHEDULE_DAY_VALUES,
+} from '@/constants/roomEnums';
 import {
   SIGNUP_PROGRAM_SKIPS_AMOUNT_WEEKLY_SURAH,
   SIGNUP_QUIZ_AMOUNT,
@@ -18,6 +37,7 @@ import {
   SIGNUP_QUIZ_PROGRAM,
   SIGNUP_QUIZ_SURAH,
   SIGNUP_QUIZ_WEEKLY,
+  SignupUserType,
 } from '@/constants/signupQuizOptions';
 
 type Tab =
@@ -27,6 +47,53 @@ type Tab =
   | 'studentReports'
   | 'roomRatings'
   | 'notifications';
+
+const AUTH_PROVIDER_GOOGLE = 'google';
+
+function isGoogleAuthUser(provider: unknown): boolean {
+  return String(provider ?? '').toLowerCase() === AUTH_PROVIDER_GOOGLE;
+}
+
+function UserSignInBadge({
+  provider,
+  t,
+}: {
+  provider: unknown;
+  t: (key: string) => string;
+}) {
+  const google = isGoogleAuthUser(provider);
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-1 text-sm font-medium ${
+        google
+          ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200'
+          : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
+      }`}
+    >
+      {google ? t('dashboard.users.signInGoogle') : t('dashboard.users.signInEmail')}
+    </span>
+  );
+}
+
+function UserProfileBadge({
+  incomplete,
+  t,
+}: {
+  incomplete: boolean;
+  t: (key: string) => string;
+}) {
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-1 text-sm font-medium ${
+        incomplete
+          ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
+          : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
+      }`}
+    >
+      {incomplete ? t('dashboard.users.profileIncomplete') : t('dashboard.users.profileComplete')}
+    </span>
+  );
+}
 
 type Pagination = {
   page: number;
@@ -55,7 +122,7 @@ type NotifyPickerUser = {
 
 /** Editable signup questionnaire fields (`PATCH /signup-options/:userId`). */
 type AdminSignupDraft = {
-  userType: '' | 'male' | 'female' | 'children';
+  userType: '' | SignupUserType;
   languageTag: string;
   preferredLanguage: string;
   nationality: string;
@@ -83,7 +150,11 @@ function signupDraftFromUserDetail(detail: Record<string, unknown>): AdminSignup
   };
   let userType: AdminSignupDraft['userType'] = '';
   const utRaw = nested.userType !== undefined ? nested.userType : detail.userType;
-  if (utRaw === 'male' || utRaw === 'female' || utRaw === 'children') {
+  if (
+    utRaw === SignupUserType.MALE ||
+    utRaw === SignupUserType.FEMALE ||
+    utRaw === SignupUserType.CHILDREN
+  ) {
     userType = utRaw;
   }
   let dobStr = '';
@@ -120,6 +191,46 @@ function signupQuizOptionLabel(val: string, t: (key: string) => string): string 
   return lbl === path ? val : lbl;
 }
 
+/** `datetime-local` value from ISO string (local timezone). */
+function isoToDatetimeLocalValue(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Editable subscription fields (`PATCH /subscription/:userId`). */
+type AdminSubscriptionDraft = {
+  signupPlan: string;
+  subscriptionPaidAt: string;
+  assignedStudyRoomId: string;
+};
+
+function subscriptionDraftFromUserDetail(
+  detail: Record<string, unknown>,
+): AdminSubscriptionDraft {
+  const sub = detail.subscription;
+  const subObj =
+    sub && typeof sub === 'object' && sub !== null ? (sub as Record<string, unknown>) : {};
+  const planKey = typeof subObj.planKey === 'string' ? subObj.planKey : '';
+  const paidAtIso = typeof subObj.paidAt === 'string' && subObj.paidAt.trim() !== '' ? subObj.paidAt : '';
+  const ar = subObj.assignedRoom;
+  let roomId = '';
+  if (ar && typeof ar === 'object' && ar !== null && typeof (ar as { id?: string }).id === 'string') {
+    roomId = (ar as { id: string }).id;
+  }
+  const signupNested = detail.signupProfile;
+  const nestedPlan =
+    signupNested && typeof signupNested === 'object' && signupNested !== null
+      ? String((signupNested as { signupPlan?: string }).signupPlan ?? '')
+      : '';
+  return {
+    signupPlan: planKey || nestedPlan,
+    subscriptionPaidAt: paidAtIso ? isoToDatetimeLocalValue(paidAtIso) : '',
+    assignedStudyRoomId: roomId || '__none__',
+  };
+};
+
 /** Options for `<Select>` matching front-end signup dropdowns (+ optional legacy/custom row). */
 function signupQuizSelectOptions(
   allowed: readonly string[],
@@ -146,9 +257,66 @@ function signupQuizSelectOptions(
 
 const ROOM_TYPE_COUNTS = [2, 3, 5, 10] as const;
 
+/** 30-minute slots `00:00` … `23:30` for schedule dropdowns. */
+const ROOM_SCHEDULE_TIME_SLOTS: string[] = (() => {
+  const slots: string[] = [];
+  for (let h = 0; h < 24; h++) {
+    for (const m of [0, 30]) {
+      slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+    }
+  }
+  return slots;
+})();
+
+function scheduleTimeOptionsForSelect(
+  current: string,
+  minExclusive?: string,
+): { value: string; label: string }[] {
+  const set = new Set(ROOM_SCHEDULE_TIME_SLOTS);
+  if (current && /^\d{2}:\d{2}$/.test(current)) {
+    set.add(current);
+  }
+  let values = [...set].sort();
+  if (minExclusive) {
+    values = values.filter((t) => t > minExclusive);
+  }
+  return values.map((value) => ({ value, label: value }));
+}
+
+function scheduleFromRoomRecord(room: Record<string, unknown>): {
+  scheduleDay: RoomScheduleDay | '';
+  scheduleTimeFrom: string;
+  scheduleTimeTo: string;
+} {
+  const raw = room.schedule;
+  if (!raw || typeof raw !== 'object') {
+    return { scheduleDay: '', scheduleTimeFrom: '', scheduleTimeTo: '' };
+  }
+  const s = raw as Record<string, unknown>;
+  const day = typeof s.dayOfWeek === 'string' ? s.dayOfWeek.toLowerCase() : '';
+  const scheduleDay = (ROOM_SCHEDULE_DAY_VALUES as readonly string[]).includes(day)
+    ? (day as RoomScheduleDay)
+    : '';
+  return {
+    scheduleDay,
+    scheduleTimeFrom: typeof s.timeFrom === 'string' ? s.timeFrom : '',
+    scheduleTimeTo: typeof s.timeTo === 'string' ? s.timeTo : '',
+  };
+}
+
+function formatRoomScheduleCell(
+  room: Record<string, unknown>,
+  t: (key: string) => string,
+): string {
+  const { scheduleDay, scheduleTimeFrom, scheduleTimeTo } = scheduleFromRoomRecord(room);
+  if (!scheduleDay || !scheduleTimeFrom || !scheduleTimeTo) return '—';
+  const dayLabel = t(`dashboard.rooms.scheduleDays.${scheduleDay}`);
+  return `${dayLabel} ${scheduleTimeFrom}–${scheduleTimeTo}`;
+}
+
 export function AdminDashboardPage() {
   const t = useT();
-  const { serverUrl, liveAppUrl, adminToken, adminName } = useAdminSettings();
+  const { serverUrl, liveAppUrl, adminToken, adminName, adminUserId } = useAdminSettings();
 
   const [tab, setTab] = useState<Tab>('rooms');
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(
@@ -199,6 +367,7 @@ export function AdminDashboardPage() {
 
   const [roomSearch, setRoomSearch] = useState('');
   const [roomTypeFilter, setRoomTypeFilter] = useState('');
+  const [roomStatusFilter, setRoomStatusFilter] = useState<RoomListStatus>(RoomListStatus.ALL);
   const [userSearch, setUserSearch] = useState('');
   const [userRole, setUserRole] = useState('');
   const [commentSearch, setCommentSearch] = useState('');
@@ -234,7 +403,7 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     setRoomsState({ loading: true });
     try {
-      let url = `${serverUrl}/rooms?page=${pages.rooms}&limit=20`;
+      let url = `${serverUrl}/rooms?page=${pages.rooms}&limit=20&status=${roomStatusFilter}`;
       if (roomSearch) url += `&search=${encodeURIComponent(roomSearch)}`;
       if (roomTypeFilter) url += `&type=${roomTypeFilter}`;
       const data = await adminFetchJson<{ data?: unknown } | Record<string, unknown>>(url, adminToken);
@@ -245,7 +414,72 @@ export function AdminDashboardPage() {
       setRoomsState({ loading: false, error: err.message });
       showMessage(t('dashboard.rooms.loadError', { message: err.message }), 'error');
     }
-  }, [adminToken, serverUrl, pages.rooms, roomSearch, roomTypeFilter, showMessage, t]);
+  }, [adminToken, serverUrl, pages.rooms, roomSearch, roomTypeFilter, roomStatusFilter, showMessage, t]);
+
+  const setRoomActive = useCallback(
+    async (roomId: string, active: boolean) => {
+      if (!adminToken) return;
+      const path = active ? 'activate' : 'deactivate';
+      const confirmKey = active
+        ? 'dashboard.rooms.confirmActivate'
+        : 'dashboard.rooms.confirmDeactivate';
+      if (!confirm(t(confirmKey))) return;
+      try {
+        await adminFetchJson(`${serverUrl}/rooms/${roomId}/${path}`, adminToken, {
+          method: 'PATCH',
+        });
+        setRoomsState((prev) => {
+          const raw = prev.data as { rooms?: Record<string, unknown>[]; pagination?: unknown } | undefined;
+          if (!raw?.rooms) return prev;
+          return {
+            ...prev,
+            data: {
+              ...raw,
+              rooms: raw.rooms.map((r) =>
+                String(r._id) === roomId ? { ...r, isActive: active } : r,
+              ),
+            },
+          };
+        });
+        showMessage(
+          active ? t('dashboard.rooms.activated') : t('dashboard.rooms.deactivated'),
+          'success',
+        );
+        void loadRooms();
+      } catch (e) {
+        reportAdminApiError(e, (msg) => showMessage(msg, 'error'), t);
+      }
+    },
+    [adminToken, serverUrl, showMessage, t, loadRooms],
+  );
+
+  const deleteRoom = useCallback(
+    async (roomId: string) => {
+      if (!adminToken) return;
+      if (!confirm(t('dashboard.rooms.confirmDelete'))) return;
+      try {
+        await adminFetchJson(`${serverUrl}/rooms/${roomId}`, adminToken, {
+          method: 'DELETE',
+        });
+        setRoomsState((prev) => {
+          const raw = prev.data as { rooms?: Record<string, unknown>[]; pagination?: unknown } | undefined;
+          if (!raw?.rooms) return prev;
+          return {
+            ...prev,
+            data: {
+              ...raw,
+              rooms: raw.rooms.filter((r) => String(r._id) !== roomId),
+            },
+          };
+        });
+        showMessage(t('dashboard.rooms.deleted'), 'success');
+        void loadRooms();
+      } catch (e) {
+        reportAdminApiError(e, (msg) => showMessage(msg, 'error'), t);
+      }
+    },
+    [adminToken, serverUrl, showMessage, t, loadRooms],
+  );
 
   const loadUsers = useCallback(async () => {
     if (!adminToken) return;
@@ -335,11 +569,23 @@ export function AdminDashboardPage() {
     description: '',
     type: '',
     participants: '',
+    scheduleDay: '' as RoomScheduleDay | '',
+    scheduleTimeFrom: '',
+    scheduleTimeTo: '',
   });
 
   const openCreateRoom = () => {
     setEditingRoomId(null);
-    setRoomForm({ nameAr: '', nameEn: '', description: '', type: '', participants: '' });
+    setRoomForm({
+      nameAr: '',
+      nameEn: '',
+      description: '',
+      type: '',
+      participants: '',
+      scheduleDay: '',
+      scheduleTimeFrom: '09:00',
+      scheduleTimeTo: '10:00',
+    });
     setRoomModal(true);
   };
 
@@ -358,6 +604,7 @@ export function AdminDashboardPage() {
         description: String(room.description ?? ''),
         type: String(room.type ?? ''),
         participants: '',
+        ...scheduleFromRoomRecord(room),
       });
       setRoomModal(true);
     } catch (e) {
@@ -382,6 +629,17 @@ export function AdminDashboardPage() {
       showMessage(t('dashboard.rooms.requiredFields'), 'error');
       return;
     }
+    const scheduleDay = roomForm.scheduleDay;
+    const scheduleTimeFrom = roomForm.scheduleTimeFrom.trim();
+    const scheduleTimeTo = roomForm.scheduleTimeTo.trim();
+    if (!scheduleDay || !scheduleTimeFrom || !scheduleTimeTo) {
+      showMessage(t('dashboard.rooms.scheduleRequired'), 'error');
+      return;
+    }
+    if (scheduleTimeFrom >= scheduleTimeTo) {
+      showMessage(t('dashboard.rooms.scheduleTimeOrder'), 'error');
+      return;
+    }
     try {
       const body = {
         nameAr,
@@ -389,6 +647,11 @@ export function AdminDashboardPage() {
         description: description || undefined,
         type,
         participantIds: participantIds.length ? participantIds : undefined,
+        schedule: {
+          dayOfWeek: scheduleDay,
+          timeFrom: scheduleTimeFrom,
+          timeTo: scheduleTimeTo,
+        },
       };
       if (editingRoomId) {
         await adminFetchJson(`${serverUrl}/rooms/${editingRoomId}`, adminToken, {
@@ -406,7 +669,7 @@ export function AdminDashboardPage() {
       setRoomModal(false);
       void loadRooms();
     } catch (err) {
-      showMessage(t('dashboard.genericError', { message: (err as Error).message }), 'error');
+      reportAdminApiError(err, (msg) => showMessage(msg, 'error'), t);
     }
   };
 
@@ -414,6 +677,9 @@ export function AdminDashboardPage() {
   const [userDetail, setUserDetail] = useState<Record<string, unknown> | null>(null);
   const [signupEdit, setSignupEdit] = useState<AdminSignupDraft | null>(null);
   const [signupSaving, setSignupSaving] = useState(false);
+  const [subEdit, setSubEdit] = useState<AdminSubscriptionDraft | null>(null);
+  const [subscriptionSaving, setSubscriptionSaving] = useState(false);
+  const [userModalRooms, setUserModalRooms] = useState<Record<string, unknown>[]>([]);
   const [commentModal, setCommentModal] = useState<{ id: string } | null>(null);
   const [commentDetail, setCommentDetail] = useState<Record<string, unknown> | null>(null);
 
@@ -421,12 +687,25 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     setUserModal({ id: userId });
     setUserDetail(null);
+    setUserModalRooms([]);
     try {
-      const data = await adminFetchJson<{ data: { user: Record<string, unknown> } }>(
-        `${serverUrl}/getById/${userId}`,
-        adminToken,
-      );
-      setUserDetail(data.data.user);
+      const [detailData, roomsRes] = await Promise.all([
+        adminFetchJson<{ data: { user: Record<string, unknown> } }>(
+          `${serverUrl}/getById/${userId}`,
+          adminToken,
+        ),
+        adminFetchJson<{ data?: { rooms?: unknown[] } } | { rooms?: unknown[] }>(
+          `${serverUrl}/rooms?page=1&limit=300`,
+          adminToken,
+        ),
+      ]);
+      setUserDetail(detailData.data.user);
+      const inner = 'data' in roomsRes && roomsRes.data !== undefined ? roomsRes.data : roomsRes;
+      const list =
+        inner && typeof inner === 'object' && inner !== null && 'rooms' in inner
+          ? (inner as { rooms?: unknown[] }).rooms
+          : undefined;
+      setUserModalRooms(Array.isArray(list) ? (list as Record<string, unknown>[]) : []);
     } catch (e) {
       showMessage(t('dashboard.users.loadDetailError', { message: (e as Error).message }), 'error');
     }
@@ -438,6 +717,14 @@ export function AdminDashboardPage() {
       return;
     }
     setSignupEdit(signupDraftFromUserDetail(userDetail));
+  }, [userDetail]);
+
+  useEffect(() => {
+    if (!userDetail) {
+      setSubEdit(null);
+      return;
+    }
+    setSubEdit(subscriptionDraftFromUserDetail(userDetail));
   }, [userDetail]);
 
   const saveSignupOptions = async () => {
@@ -486,6 +773,40 @@ export function AdminDashboardPage() {
     }
   };
 
+  const saveSubscription = async () => {
+    if (!adminToken || !userModal || !subEdit) return;
+    const baseUrl = serverUrl.replace(/\/$/, '');
+    const planTrim = subEdit.signupPlan.trim();
+    const paidTrim = subEdit.subscriptionPaidAt.trim();
+    const body: Record<string, unknown> = {
+      signupPlan: planTrim === '' ? null : planTrim,
+      subscriptionPaidAt: paidTrim === '' ? null : new Date(paidTrim).toISOString(),
+      assignedStudyRoomId:
+        subEdit.assignedStudyRoomId === '__none__' ? null : subEdit.assignedStudyRoomId,
+    };
+    setSubscriptionSaving(true);
+    try {
+      const res = await adminFetchJson<{
+        data?: { subscription?: Record<string, unknown> };
+      }>(`${baseUrl}/subscription/${userModal.id}`, adminToken, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      const fresh = res?.data?.subscription;
+      if (fresh && typeof fresh === 'object') {
+        setUserDetail((prev) => (prev ? { ...prev, subscription: fresh } : prev));
+      }
+      showMessage(t('dashboard.users.subscriptionSaved'), 'success');
+    } catch (e) {
+      showMessage(
+        t('dashboard.users.subscriptionSaveError', { message: (e as Error).message }),
+        'error',
+      );
+    } finally {
+      setSubscriptionSaving(false);
+    }
+  };
+
   const openComment = async (commentId: string) => {
     if (!adminToken) return;
     setCommentModal({ id: commentId });
@@ -509,7 +830,7 @@ export function AdminDashboardPage() {
       setCommentModal(null);
       void loadComments();
     } catch (e) {
-      showMessage(t('dashboard.genericError', { message: (e as Error).message }), 'error');
+      reportAdminApiError(e, (msg) => showMessage(msg, 'error'), t);
     }
   };
 
@@ -520,7 +841,7 @@ export function AdminDashboardPage() {
       showMessage(t('common.success'), 'success');
       void loadUsers();
     } catch (e) {
-      showMessage(t('dashboard.genericError', { message: (e as Error).message }), 'error');
+      reportAdminApiError(e, (msg) => showMessage(msg, 'error'), t);
     }
   };
 
@@ -780,10 +1101,16 @@ export function AdminDashboardPage() {
     | { ratings?: Record<string, unknown>[]; pagination?: Pagination }
     | undefined;
 
+  const isWideDashboardTab = tab === 'rooms' || tab === 'users';
+
   return (
     <div className="min-h-full">
       <header className="border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div
+          className={`mx-auto flex w-full flex-col gap-5 lg:flex-row lg:items-center lg:justify-between ${
+            isWideDashboardTab ? 'max-w-none' : 'max-w-7xl'
+          }`}
+        >
           <h1 className="shrink-0 text-xl font-semibold text-text-primary dark:text-gray-100">
             {t('dashboard.title')}
           </h1>
@@ -793,7 +1120,7 @@ export function AdminDashboardPage() {
         </div>
       </header>
 
-      <nav className="flex flex-wrap gap-2 border-b border-gray-200 bg-gray-50 px-6 py-3 dark:border-gray-700 dark:bg-gray-950">
+      <nav className="dashboard-nav-tabs flex flex-wrap justify-start gap-2 border-b border-gray-200 bg-gray-50 px-6 py-3 dark:border-gray-700 dark:bg-gray-950">
         {(
           [
             ['rooms', t('dashboard.tabs.rooms')],
@@ -819,7 +1146,9 @@ export function AdminDashboardPage() {
         ))}
       </nav>
 
-      <main className="mx-auto max-w-7xl space-y-6 p-6">
+      <main
+        className={`mx-auto w-full space-y-6 p-4 sm:p-6 ${isWideDashboardTab ? 'max-w-none' : 'max-w-7xl'}`}
+      >
         {tab === 'rooms' && (
           <Card>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -847,6 +1176,15 @@ export function AdminDashboardPage() {
                   </option>
                 ))}
               </Select>
+              <Select
+                value={roomStatusFilter}
+                onChange={(e) => setRoomStatusFilter(e.target.value as RoomListStatus)}
+                onBlur={() => void loadRooms()}
+              >
+                <option value={RoomListStatus.ALL}>{t('dashboard.rooms.statusFilterAll')}</option>
+                <option value={RoomListStatus.ACTIVE}>{t('dashboard.rooms.statusFilterActive')}</option>
+                <option value={RoomListStatus.INACTIVE}>{t('dashboard.rooms.statusFilterInactive')}</option>
+              </Select>
               <Btn variant="info" onClick={() => void loadRooms()}>
                 {t('common.refresh')}
               </Btn>
@@ -859,40 +1197,60 @@ export function AdminDashboardPage() {
               <p className="text-text-muted">{t('dashboard.rooms.noRooms')}</p>
             ) : (
               <>
-                <TableShell>
-                  <thead className="bg-gray-50 dark:bg-gray-900">
+                <TableShell
+                  className="admin-striped-table w-full"
+                  minWidth={1900}
+                  colWidths={[
+                    '150px',
+                    '150px',
+                    '95px',
+                    '170px',
+                    '70px',
+                    '280px',
+                    '140px',
+                    '95px',
+                    '380px',
+                  ]}
+                >
+                  <thead>
                     <tr>
                       {[
                         t('dashboard.rooms.cols.arabic'),
                         t('dashboard.rooms.cols.english'),
                         t('dashboard.rooms.cols.type'),
+                        t('dashboard.rooms.cols.schedule'),
                         t('dashboard.rooms.cols.cap'),
                         t('dashboard.rooms.cols.participants'),
                         t('dashboard.rooms.cols.createdBy'),
                         t('dashboard.rooms.cols.status'),
-                        '',
-                      ].map((h) => (
+                        t('dashboard.rooms.cols.actions'),
+                      ].map((h, colIndex) => (
                           <th
-                            key={h || 'actions'}
-                            className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted"
+                            key={`room-col-${colIndex}`}
+                            className={tableHeadClass}
                           >
                             {h}
                           </th>
                         ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                  <tbody>
                     {roomsData.rooms.map((room) => (
-                      <tr key={String(room._id)} className="dark:bg-gray-800/50">
+                      <tr key={String(room._id)}>
                         <td className="px-3 py-2">{escapeHtml(room.nameAr)}</td>
                         <td className="px-3 py-2">{escapeHtml(room.nameEn)}</td>
                         <td className="px-3 py-2">
                           {t('dashboard.rooms.persons', { count: Number(room.type) })}
                         </td>
+                        <td className="px-3 py-2 text-xs whitespace-nowrap">
+                          {formatRoomScheduleCell(room, t)}
+                        </td>
                         <td className="px-3 py-2">{String(room.capacity)}</td>
-                        <td className="px-3 py-2">
-                          {Array.isArray(room.participants) ? room.participants.length : 0}/
-                          {String(room.capacity)}
+                        <td className={`${tableCellClass} text-xs`}>
+                          <RoomParticipantsCell
+                            room={room}
+                            emptyLabel={t('dashboard.rooms.noParticipants')}
+                          />
                         </td>
                         <td className="px-3 py-2 text-xs">
                           {room.createdBy &&
@@ -902,13 +1260,14 @@ export function AdminDashboardPage() {
                             : t('common.na')}
                         </td>
                         <td className="px-3 py-2">
-                          {room.isActive ? (
+                          {room.isActive !== false ? (
                             <span className="text-emerald-600">{t('dashboard.rooms.active')}</span>
                           ) : (
                             <span className="text-red-600">{t('dashboard.rooms.inactive')}</span>
                           )}
                         </td>
-                        <td className="space-x-2 px-3 py-2 whitespace-nowrap">
+                        <td className={`${tableCellClass} whitespace-nowrap`}>
+                          <div className="flex flex-nowrap gap-2">
                           <Btn
                             variant="info"
                             className="!px-2 !py-1 text-xs"
@@ -923,6 +1282,31 @@ export function AdminDashboardPage() {
                           >
                             {t('dashboard.rooms.edit')}
                           </Btn>
+                          {room.isActive !== false ? (
+                            <Btn
+                              variant="danger"
+                              className="!px-2 !py-1 text-xs"
+                              onClick={() => void setRoomActive(String(room._id), false)}
+                            >
+                              {t('dashboard.rooms.deactivate')}
+                            </Btn>
+                          ) : (
+                            <Btn
+                              variant="success"
+                              className="!px-2 !py-1 text-xs"
+                              onClick={() => void setRoomActive(String(room._id), true)}
+                            >
+                              {t('dashboard.rooms.activate')}
+                            </Btn>
+                          )}
+                          <Btn
+                            variant="danger"
+                            className="!px-2 !py-1 text-xs"
+                            onClick={() => void deleteRoom(String(room._id))}
+                          >
+                            {t('dashboard.rooms.delete')}
+                          </Btn>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -962,51 +1346,73 @@ export function AdminDashboardPage() {
               <p className="text-text-muted">{t('dashboard.users.noUsers')}</p>
             ) : (
               <>
-                <TableShell>
-                  <thead className="bg-gray-50 dark:bg-gray-900">
+                <TableShell
+                  className="admin-striped-table admin-users-table w-full"
+                  minWidth={1650}
+                  colWidths={[
+                    '150px',
+                    '240px',
+                    '95px',
+                    '110px',
+                    '120px',
+                    '95px',
+                    '95px',
+                    '400px',
+                  ]}
+                >
+                  <thead>
                     <tr>
                       {[
                         t('dashboard.users.cols.name'),
                         t('dashboard.users.cols.email'),
                         t('dashboard.users.cols.role'),
+                        t('dashboard.users.cols.signIn'),
+                        t('dashboard.users.cols.profile'),
                         t('dashboard.users.cols.active'),
                         t('dashboard.users.cols.frozen'),
                         t('dashboard.users.cols.actions'),
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted"
-                        >
+                      ].map((h, colIndex) => (
+                        <th key={`user-col-${colIndex}`} className={tableHeadClass}>
                           {h}
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                  <tbody>
                     {usersData.users.map((user) => (
                       <tr
                         key={String(user.id)}
-                        className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                        className="cursor-pointer"
                         onClick={() => void openUser(String(user.id))}
                       >
-                        <td className="px-3 py-2">
+                        <td className={`${tableCellClass} text-base`}>
                           {escapeHtml(user.firstName)} {escapeHtml(user.lastName)}
                         </td>
-                        <td className="px-3 py-2">{escapeHtml(user.email)}</td>
-                        <td className="px-3 py-2">{escapeHtml(user.role)}</td>
-                        <td className="px-3 py-2">
+                        <td className={`${tableCellClass} text-base break-all`}>{escapeHtml(user.email)}</td>
+                        <td className={`${tableCellClass} text-base`}>{escapeHtml(user.role)}</td>
+                        <td className={tableCellClass}>
+                          <UserSignInBadge provider={user.provider} t={t} />
+                        </td>
+                        <td className={tableCellClass}>
+                          <UserProfileBadge
+                            incomplete={user.isSignupProfileIncomplete === true}
+                            t={t}
+                          />
+                        </td>
+                        <td className={`${tableCellClass} text-base`}>
                           {user.active !== false ? t('dashboard.users.active') : t('dashboard.users.inactive')}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className={`${tableCellClass} text-base`}>
                           {user.isFrozen ? t('dashboard.users.frozen') : t('dashboard.users.notFrozen')}
                         </td>
-                        <td className="space-x-1 px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                        <td className={tableCellClass} onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-nowrap gap-2">
                           {user.role !== 'admin' && (
                             <>
                               {user.active !== false ? (
                                 <Btn
                                   variant="warning"
-                                  className="!px-2 !py-1 text-xs"
+                                  className="!px-2.5 !py-1.5 text-sm"
                                   onClick={() => {
                                     if (confirm(t('dashboard.users.confirmDeactivate')))
                                       void userAction(`/deactivate/${user.id}`, 'PATCH');
@@ -1017,7 +1423,7 @@ export function AdminDashboardPage() {
                               ) : (
                                 <Btn
                                   variant="success"
-                                  className="!px-2 !py-1 text-xs"
+                                  className="!px-2.5 !py-1.5 text-sm"
                                   onClick={() => void userAction(`/activate/${user.id}`, 'PATCH')}
                                 >
                                   {t('dashboard.users.activate')}
@@ -1025,10 +1431,10 @@ export function AdminDashboardPage() {
                               )}
                             </>
                           )}
-                          {!user.isFrozen ? (
+                          {adminUserId && String(user.id) === adminUserId ? null : !user.isFrozen ? (
                             <Btn
                               variant="warning"
-                              className="!px-2 !py-1 text-xs"
+                              className="!px-2.5 !py-1.5 text-sm"
                               onClick={() => {
                                 if (confirm(t('dashboard.users.confirmFreeze')))
                                   void userAction(`/freeze-account/${user.id}`, 'DELETE');
@@ -1039,7 +1445,7 @@ export function AdminDashboardPage() {
                           ) : (
                             <Btn
                               variant="success"
-                              className="!px-2 !py-1 text-xs"
+                              className="!px-2.5 !py-1.5 text-sm"
                               onClick={() => void userAction(`/unfreeze-account/${user.id}`, 'PATCH')}
                             >
                               {t('dashboard.users.unfreeze')}
@@ -1048,7 +1454,7 @@ export function AdminDashboardPage() {
                           {user.role !== 'admin' && (
                             <Btn
                               variant="danger"
-                              className="!px-2 !py-1 text-xs"
+                              className="!px-2.5 !py-1.5 text-sm"
                               onClick={() => {
                                 if (confirm(t('dashboard.users.confirmDelete')))
                                   void userAction(`/delete-account/${user.id}`, 'DELETE');
@@ -1057,6 +1463,7 @@ export function AdminDashboardPage() {
                               {t('common.delete')}
                             </Btn>
                           )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1090,7 +1497,7 @@ export function AdminDashboardPage() {
               <p className="text-text-muted">{t('dashboard.comments.noComments')}</p>
             ) : (
               <>
-                <TableShell>
+                <TableShell colWidths={['38%', '14%', '18%', '15%', '15%']}>
                   <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
                       {[
@@ -1102,7 +1509,7 @@ export function AdminDashboardPage() {
                       ].map((h) => (
                         <th
                           key={h}
-                          className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted"
+                          className={tableHeadClass}
                         >
                           {h}
                         </th>
@@ -1176,8 +1583,8 @@ export function AdminDashboardPage() {
               <p className="text-text-muted">{t('dashboard.studentReports.noReports')}</p>
             ) : (
               <>
-                <TableShell>
-                  <thead className="bg-gray-50 dark:bg-gray-900">
+                <TableShell className="admin-striped-table" colWidths={['12%', '12%', '14%', '40%', '14%']}>
+                  <thead>
                     <tr>
                       {[
                         t('dashboard.studentReports.cols.student'),
@@ -1188,14 +1595,14 @@ export function AdminDashboardPage() {
                       ].map((h) => (
                         <th
                           key={h}
-                          className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted"
+                          className={tableHeadClass}
                         >
                           {h}
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                  <tbody>
                     {studentReportsData.reports.map((row) => {
                       const student = row.student as
                         | { firstName?: string; lastName?: string; email?: string }
@@ -1212,28 +1619,28 @@ export function AdminDashboardPage() {
                       return (
                         <tr
                           key={String(row.id)}
-                          className="cursor-pointer hover:bg-gray-50 dark:bg-gray-800/50 dark:hover:bg-gray-800"
+                          className="cursor-pointer"
                           onClick={() => setSelectedSessionReport(row as SessionStudentReportRow)}
                         >
-                          <td className="max-w-[10rem] px-3 py-2 text-sm">
+                          <td className={`${tableCellClass} text-sm`}>
                             <div>{escapeHtml(name(student))}</div>
                             {student?.email ? (
                               <div className="text-xs text-text-muted">{escapeHtml(String(student.email))}</div>
                             ) : null}
                           </td>
-                          <td className="px-3 py-2 text-sm">{escapeHtml(name(teacher))}</td>
-                          <td className="max-w-[12rem] px-3 py-2 text-sm">
+                          <td className={`${tableCellClass} text-sm`}>{escapeHtml(name(teacher))}</td>
+                          <td className={`${tableCellClass} text-sm`}>
                             {room?.nameEn || room?.nameAr
                               ? escapeHtml(String(room.nameEn ?? room.nameAr))
                               : '—'}
                           </td>
                           <td
-                            className="max-w-xl px-3 py-2 text-sm whitespace-pre-wrap"
+                            className={`${tableCellClass} text-sm break-words whitespace-pre-wrap`}
                             title={fullReport.length > 140 ? fullReport : undefined}
                           >
                             {preview || '—'}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-xs">
+                          <td className={`${tableCellClass} whitespace-nowrap text-xs`}>
                             {row.createdAt
                               ? new Date(String(row.createdAt)).toLocaleString()
                               : ''}
@@ -1272,7 +1679,7 @@ export function AdminDashboardPage() {
               <p className="text-text-muted">{t('dashboard.roomRatings.noRatings')}</p>
             ) : (
               <>
-                <TableShell>
+                <TableShell colWidths={['12%', '12%', '14%', '40%', '14%']}>
                   <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
                       {[
@@ -1284,7 +1691,7 @@ export function AdminDashboardPage() {
                       ].map((h) => (
                         <th
                           key={h}
-                          className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted"
+                          className={tableHeadClass}
                         >
                           {h}
                         </th>
@@ -1301,13 +1708,13 @@ export function AdminDashboardPage() {
                         `${u?.firstName ?? ''} ${u?.lastName ?? ''}`.trim() || '—';
                       return (
                         <tr key={String(row.id)} className="dark:bg-gray-800/50">
-                          <td className="max-w-[10rem] px-3 py-2 text-sm">
+                          <td className={`${tableCellClass} text-sm`}>
                             <div>{escapeHtml(name(student))}</div>
                             {student?.email ? (
                               <div className="text-xs text-text-muted">{escapeHtml(String(student.email))}</div>
                             ) : null}
                           </td>
-                          <td className="max-w-[12rem] px-3 py-2 text-sm">
+                          <td className={`${tableCellClass} text-sm`}>
                             {room?.nameEn || room?.nameAr
                               ? escapeHtml(String(room.nameEn ?? room.nameAr))
                               : '—'}
@@ -1315,10 +1722,10 @@ export function AdminDashboardPage() {
                           <td className="px-3 py-2 font-medium">
                             {t('dashboard.roomRatings.ratingOf', { rating: String(row.rating ?? '—') })}
                           </td>
-                          <td className="max-w-xl px-3 py-2 text-sm whitespace-pre-wrap">
+                          <td className={`${tableCellClass} text-sm break-words whitespace-pre-wrap`}>
                             {row.comment ? escapeHtml(String(row.comment)) : '—'}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-xs">
+                          <td className={`${tableCellClass} whitespace-nowrap text-xs`}>
                             {row.createdAt
                               ? new Date(String(row.createdAt)).toLocaleString()
                               : ''}
@@ -1354,7 +1761,7 @@ export function AdminDashboardPage() {
               {!notifUsers.length ? (
                 <p className="text-text-muted">{t('dashboard.notifications.noPushUsers')}</p>
               ) : (
-                <TableShell>
+                <TableShell colWidths={['10%', '14%', '18%', '12%', '8%', '14%', '24%']}>
                   <thead>
                     <tr>
                       {[
@@ -1366,7 +1773,7 @@ export function AdminDashboardPage() {
                         t('dashboard.notifications.cols.lastUsed'),
                         '',
                       ].map((h) => (
-                        <th key={h} className="px-3 py-2 text-left text-xs font-semibold text-text-muted">
+                        <th key={h} className={tableHeadClass}>
                           {h}
                         </th>
                       ))}
@@ -1412,7 +1819,7 @@ export function AdminDashboardPage() {
               {!notifHistory.length ? (
                 <p className="text-text-muted">{t('dashboard.notifications.noHistory')}</p>
               ) : (
-                <TableShell>
+                <TableShell colWidths={['14%', '28%', '10%', '10%', '8%', '8%', '22%']}>
                   <thead>
                     <tr>
                       {[
@@ -1424,7 +1831,7 @@ export function AdminDashboardPage() {
                         t('dashboard.notifications.cols.failed'),
                         t('dashboard.notifications.cols.date'),
                       ].map((h) => (
-                        <th key={h} className="px-3 py-2 text-left text-xs font-semibold text-text-muted">
+                        <th key={h} className={tableHeadClass}>
                           {h}
                         </th>
                       ))}
@@ -1507,6 +1914,75 @@ export function AdminDashboardPage() {
               ))}
             </Select>
           </Field>
+          <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-700 dark:bg-gray-800/40">
+            <p className="mb-3 text-sm font-medium text-text-secondary">
+              {t('dashboard.rooms.scheduleSection')}
+            </p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label={t('dashboard.rooms.scheduleDay')}>
+                <Select
+                  required
+                  value={roomForm.scheduleDay}
+                  onChange={(e) =>
+                    setRoomForm((f) => ({
+                      ...f,
+                      scheduleDay: e.target.value as RoomScheduleDay | '',
+                    }))
+                  }
+                >
+                  <option value="">{t('dashboard.rooms.scheduleSelectDay')}</option>
+                  {ROOM_SCHEDULE_DAY_VALUES.map((d) => (
+                    <option key={d} value={d}>
+                      {t(`dashboard.rooms.scheduleDays.${d}`)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label={t('dashboard.rooms.scheduleFrom')}>
+                <Select
+                  required
+                  value={roomForm.scheduleTimeFrom}
+                  onChange={(e) => {
+                    const nextFrom = e.target.value;
+                    setRoomForm((f) => ({
+                      ...f,
+                      scheduleTimeFrom: nextFrom,
+                      scheduleTimeTo:
+                        f.scheduleTimeTo && nextFrom && f.scheduleTimeTo <= nextFrom
+                          ? ''
+                          : f.scheduleTimeTo,
+                    }));
+                  }}
+                >
+                  <option value="">{t('dashboard.rooms.scheduleSelectTime')}</option>
+                  {scheduleTimeOptionsForSelect(roomForm.scheduleTimeFrom).map((o) => (
+                    <option key={`from-${o.value}`} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label={t('dashboard.rooms.scheduleTo')}>
+                <Select
+                  required
+                  value={roomForm.scheduleTimeTo}
+                  onChange={(e) =>
+                    setRoomForm((f) => ({ ...f, scheduleTimeTo: e.target.value }))
+                  }
+                >
+                  <option value="">{t('dashboard.rooms.scheduleSelectTime')}</option>
+                  {scheduleTimeOptionsForSelect(
+                    roomForm.scheduleTimeTo,
+                    roomForm.scheduleTimeFrom || undefined,
+                  ).map((o) => (
+                    <option key={`to-${o.value}`} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+          </div>
           <Field label={t('dashboard.rooms.participantIds')}>
             <Input
               value={roomForm.participants}
@@ -1540,6 +2016,17 @@ export function AdminDashboardPage() {
               <p>
                 <strong>{t('dashboard.users.role')}:</strong> {String(userDetail.role ?? '')}
               </p>
+              <p className="flex flex-wrap items-center gap-2">
+                <strong>{t('dashboard.users.detailSignIn')}:</strong>
+                <UserSignInBadge provider={userDetail.provider} t={t} />
+              </p>
+              <p className="flex flex-wrap items-center gap-2">
+                <strong>{t('dashboard.users.detailProfileStatus')}:</strong>
+                <UserProfileBadge
+                  incomplete={userDetail.isSignupProfileIncomplete === true}
+                  t={t}
+                />
+              </p>
               <p>
                 <strong>{t('dashboard.users.phone')}:</strong> {String(userDetail.phone ?? '')}
               </p>
@@ -1552,7 +2039,96 @@ export function AdminDashboardPage() {
                 <strong>{t('dashboard.users.created')}:</strong>{' '}
                 {userDetail.createdAt ? new Date(String(userDetail.createdAt)).toLocaleString() : ''}
               </p>
+              {(() => {
+                const subRaw = userDetail.subscription;
+                if (!subRaw || typeof subRaw !== 'object') return null;
+                const tier =
+                  typeof (subRaw as { tier?: unknown }).tier === 'string'
+                    ? String((subRaw as { tier: string }).tier)
+                    : '';
+                if (!tier) return null;
+                return (
+                  <p className="text-text-secondary">
+                    <strong>{t('dashboard.users.subscriptionTierLabel')}:</strong>{' '}
+                    {tier === 'paid'
+                      ? t('dashboard.users.subscriptionTierPaid')
+                      : t('dashboard.users.subscriptionTierFree')}
+                  </p>
+                );
+              })()}
             </div>
+
+            {subEdit ? (
+              <div className="border-t border-blue-900/15 bg-blue-50/40 px-1 py-4 dark:border-blue-900/40 dark:bg-blue-950/20">
+                <p className="mb-1 font-semibold text-text-secondary">
+                  {t('dashboard.users.subscriptionSection')}
+                </p>
+                <p className="mb-4 text-xs text-text-muted">{t('dashboard.users.subscriptionHint')}</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label={t('dashboard.users.subscriptionPlan')} className="sm:col-span-2">
+                    <Select
+                      value={subEdit.signupPlan}
+                      onChange={(e) =>
+                        setSubEdit((s) => (s ? { ...s, signupPlan: e.target.value } : s))
+                      }
+                    >
+                      {signupQuizSelectOptions(SIGNUP_QUIZ_PLAN, subEdit.signupPlan, t).map((o) => (
+                        <option key={o.value || '__unset'} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label={t('dashboard.users.subscriptionPaidAt')} className="sm:col-span-2">
+                    <Input
+                      type="datetime-local"
+                      value={subEdit.subscriptionPaidAt}
+                      onChange={(e) =>
+                        setSubEdit((s) =>
+                          s ? { ...s, subscriptionPaidAt: e.target.value } : s,
+                        )
+                      }
+                    />
+                    <span className="mt-1 block text-xs text-text-muted">
+                      {t('dashboard.users.subscriptionPaidAtHint')}
+                    </span>
+                  </Field>
+                  <Field label={t('dashboard.users.subscriptionRoom')} className="sm:col-span-2">
+                    <Select
+                      value={subEdit.assignedStudyRoomId}
+                      onChange={(e) =>
+                        setSubEdit((s) =>
+                          s ? { ...s, assignedStudyRoomId: e.target.value } : s,
+                        )
+                      }
+                    >
+                      <option value="__none__">{t('dashboard.users.subscriptionRoomUnset')}</option>
+                      {userModalRooms.map((r) => {
+                        const id = String(r._id ?? '');
+                        const na = String(r.nameAr ?? '');
+                        const ne = String(r.nameEn ?? '');
+                        if (!id) return null;
+                        return (
+                          <option key={id} value={id}>
+                            {ne || na} ({id.slice(-6)})
+                          </option>
+                        );
+                      })}
+                    </Select>
+                  </Field>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <Btn
+                    type="button"
+                    variant="primary"
+                    disabled={subscriptionSaving || !adminToken}
+                    onClick={() => void saveSubscription()}
+                  >
+                    {subscriptionSaving ? t('common.loading') : t('dashboard.users.subscriptionSave')}
+                  </Btn>
+                </div>
+              </div>
+            ) : null}
 
             {signupEdit ? (
               <div className="border-t border-gray-200 pt-4 dark:border-gray-700">
@@ -1574,9 +2150,9 @@ export function AdminDashboardPage() {
                       }
                     >
                       <option value="">{t('dashboard.users.signupUserTypeUnset')}</option>
-                      <option value="male">{t('dashboard.users.signupUserTypeMale')}</option>
-                      <option value="female">{t('dashboard.users.signupUserTypeFemale')}</option>
-                      <option value="children">{t('dashboard.users.signupUserTypeChildren')}</option>
+                      <option value={SignupUserType.MALE}>{t('dashboard.users.signupUserTypeMale')}</option>
+                      <option value={SignupUserType.FEMALE}>{t('dashboard.users.signupUserTypeFemale')}</option>
+                      <option value={SignupUserType.CHILDREN}>{t('dashboard.users.signupUserTypeChildren')}</option>
                     </Select>
                   </Field>
                   <Field label={t('dashboard.users.signupDateOfBirth')}>
