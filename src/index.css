@@ -21,6 +21,69 @@ html[dir='rtl'] .rtl-flip-row {
   flex-direction: row-reverse;
 }
 
+/* Admin tables: keep header/body columns aligned in LTR and RTL */
+.admin-data-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.admin-data-table :is(th, td) {
+  text-align: start;
+  vertical-align: top;
+}
+.admin-data-table thead th {
+  vertical-align: bottom;
+}
+.admin-data-table tbody tr {
+  border-bottom: 1px solid rgb(229 231 235);
+}
+.dark .admin-data-table tbody tr {
+  border-bottom-color: rgb(75 85 99);
+}
+
+/* Dashboard tables (rooms, users, student reports) — alternating rows */
+.admin-striped-table .admin-data-table thead tr {
+  background-color: rgb(243 244 246);
+}
+.admin-striped-table .admin-data-table tbody tr {
+  border-bottom: 1px solid rgb(229 231 235);
+}
+.admin-striped-table .admin-data-table tbody tr:nth-child(odd) {
+  background-color: rgb(255 255 255);
+}
+.admin-striped-table .admin-data-table tbody tr:nth-child(even) {
+  background-color: rgb(243 244 246);
+}
+.admin-striped-table .admin-data-table tbody tr:hover {
+  background-color: rgb(236 253 245);
+}
+.dark .admin-striped-table .admin-data-table thead tr {
+  background-color: rgb(31 41 55);
+}
+.dark .admin-striped-table .admin-data-table tbody tr {
+  border-bottom-color: rgb(55 65 81);
+}
+.dark .admin-striped-table .admin-data-table tbody tr:nth-child(odd) {
+  background-color: rgb(31 41 55);
+}
+.dark .admin-striped-table .admin-data-table tbody tr:nth-child(even) {
+  background-color: rgb(17 24 39);
+}
+.dark .admin-striped-table .admin-data-table tbody tr:hover {
+  background-color: rgb(6 78 59 / 0.45);
+}
+
+/* Users table — larger text and minimum width */
+.admin-users-table.admin-striped-table .admin-data-table {
+  min-width: 1650px;
+  font-size: 16px;
+}
+.admin-users-table .admin-data-table thead th {
+  font-size: 15px;
+}
+.admin-users-table .admin-data-table tbody td {
+  font-size: 16px;
+}
+
 /* Log modal JSON highlighting (from logs-viewer.html) */
 .json-key {
   color: #881391;
@@ -61,7 +124,59 @@ html[dir='rtl'] .rtl-flip-row {
 }
 .json-content {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  font-size: 14px;
+  line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* HTTP logs viewer — readable table and detail text */
+.http-logs-panel {
+  font-size: 17px;
+}
+.http-logs-panel .http-logs-table .admin-data-table {
+  min-width: 1400px;
+  font-size: 17px;
+}
+.http-logs-panel .http-logs-table th {
+  font-size: 16px;
+}
+.http-logs-panel .http-logs-table td {
+  font-size: 17px;
+}
+.http-logs-panel .json-content {
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+/* HTTP logs table — alternating row backgrounds */
+.http-logs-panel .http-logs-table .admin-data-table thead tr {
+  background-color: rgb(243 244 246);
+}
+.http-logs-panel .http-logs-table .admin-data-table tbody tr {
+  border-bottom: 1px solid rgb(229 231 235);
+}
+.http-logs-panel .http-logs-table .admin-data-table tbody tr:nth-child(odd) {
+  background-color: rgb(255 255 255);
+}
+.http-logs-panel .http-logs-table .admin-data-table tbody tr:nth-child(even) {
+  background-color: rgb(243 244 246);
+}
+.http-logs-panel .http-logs-table .admin-data-table tbody tr:hover {
+  background-color: rgb(236 253 245);
+}
+.dark .http-logs-panel .http-logs-table .admin-data-table thead tr {
+  background-color: rgb(31 41 55);
+}
+.dark .http-logs-panel .http-logs-table .admin-data-table tbody tr {
+  border-bottom-color: rgb(55 65 81);
+}
+.dark .http-logs-panel .http-logs-table .admin-data-table tbody tr:nth-child(odd) {
+  background-color: rgb(31 41 55);
+}
+.dark .http-logs-panel .http-logs-table .admin-data-table tbody tr:nth-child(even) {
+  background-color: rgb(17 24 39);
+}
+.dark .http-logs-panel .http-logs-table .admin-data-table tbody tr:hover {
+  background-color: rgb(6 78 59 / 0.45);
 }

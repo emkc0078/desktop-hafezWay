@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useT } from '@/context/LocaleContext';
-import { Btn, Field, Modal, Select, TableShell } from '@/components/ui';
+import { Btn, Field, Modal, Select, TableShell, tableHeadClass } from '@/components/ui';
 import { adminFetchJson } from '@/utils/adminFetch';
+import { isAdminSessionExpiredError } from '@/utils/adminSession';
 import { escapeHtml } from '@/utils/escapeHtml';
 
 /** Matches front-hafezway `profile/reports.tsx` accent blocks */
@@ -94,6 +95,7 @@ export function StudentReportDetailModal(props: {
       const res = await adminFetchJson<{ data: MonthlyPayload }>(url, adminToken);
       setMonthly(res.data);
     } catch (e) {
+      if (isAdminSessionExpiredError(e)) return;
       const err = e as Error;
       setMonthlyError(err.message);
       setMonthly(null);
@@ -216,10 +218,10 @@ export function StudentReportDetailModal(props: {
                     <TableShell className="rounded-[14px] border-gray-200 bg-white dark:border-gray-600 dark:bg-gray-950">
                       <thead>
                         <tr className="bg-gray-50 dark:bg-gray-900">
-                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted">
+                          <th className={tableHeadClass}>
                             {t('studentReport.week')}
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted">
+                          <th className={tableHeadClass}>
                             {t('studentReport.day')}
                           </th>
                           <th className="px-3 py-2 text-center text-xs font-semibold uppercase text-text-muted">

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { consumeAdminSessionExpiredNotice } from '@/utils/adminSession';
 import {
   useAdminSettings,
   DEFAULT_SERVER,
@@ -31,6 +32,12 @@ export function AdminAuthBar({ showTestHint }: Props) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!adminToken && consumeAdminSessionExpiredNotice()) {
+      setError(t('auth.sessionExpired'));
+    }
+  }, [adminToken, t]);
 
   const onLogin = async (e: React.FormEvent) => {
     e.preventDefault();

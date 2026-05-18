@@ -1,3 +1,9 @@
+import {
+  AdminSessionExpiredError,
+  notifyAdminUnauthorized,
+  shouldLogoutAdminSession,
+} from '@/utils/adminSession';
+
 /** Matches back-hafezway admin HTML: `Authorization: admin <JWT>` */
 export async function adminFetchJson<T = unknown>(
   url: string,
@@ -24,11 +30,15 @@ export async function adminFetchJson<T = unknown>(
     } catch {
       errorData = { message: `HTTP ${response.status}: ${response.statusText}` };
     }
-    if (response.status === 404) {
-      const serverMsg = errorData.message || errorData.error;
-      throw new Error(`404: ${serverMsg ?? 'Route not found'}. URL: ${url}`);
+    const message = errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+    if (shouldLogoutAdminSession(response.status, message)) {
+      notifyAdminUnauthorized();
+      throw new AdminSessionExpiredError();
     }
-    throw new Error(errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+    if (response.status === 404) {
+      throw new Error(`404: ${message ?? 'Route not found'}. URL: ${url}`);
+    }
+    throw new Error(message);
   }
   return response.json() as Promise<T>;
 }
@@ -56,11 +66,11 @@ export async function adminFetchResponse(
       } catch {
         /* ignore */
       }
+      if (shouldLogoutAdminSession(response.status, errorMessage)) {
+        notifyAdminUnauthorized();
+        throw new AdminSessionExpiredError();
+      }
       switch (response.status) {
-        case 401:
-          errorMessage =
-            'Unauthorized: Invalid or expired admin token. Please check your token and try again.';
-          break;
         case 403:
           errorMessage =
             'Forbidden: Your token does not have admin privileges required for this operation.';
@@ -78,6 +88,9 @@ export async function adminFetchResponse(
     }
     return response;
   } catch (fetchError: unknown) {
+    if (fetchError instanceof AdminSessionExpiredError) {
+      throw fetchError;
+    }
     const err = fetchError as Error;
     if (err.name === 'TypeError' && err.message.includes('fetch')) {
       throw new Error(`Cannot connect to server. Please ensure the API server is running.`);

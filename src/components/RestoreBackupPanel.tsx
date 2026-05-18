@@ -4,7 +4,7 @@ import type {
   ListLocalConfigsArchivesResult,
 } from '@/electron-bridge';
 import { useT } from '@/context/LocaleContext';
-import { Btn, Card, Field, Input, Modal, Select, TableShell } from '@/components/ui';
+import { Btn, Card, Field, Input, Modal, Select, TableShell, tableHeadClass } from '@/components/ui';
 
 type Only = 'all' | 'env' | 'nginx';
 
@@ -289,7 +289,7 @@ export function RestoreBackupPanel({ onMessage }: Props) {
                 ].map((h) => (
                   <th
                     key={h}
-                    className="px-3 py-2 text-left text-xs font-semibold uppercase text-text-muted"
+                    className={tableHeadClass}
                   >
                     {h}
                   </th>

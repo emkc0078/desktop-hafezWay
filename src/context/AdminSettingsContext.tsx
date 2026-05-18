@@ -7,11 +7,14 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { getUserIdFromAccessToken } from '@/utils/jwtUserId';
+import { registerAdminLogoutHandler } from '@/utils/adminSession';
 
 const STORAGE_SERVER = 'api_server';
 const STORAGE_LIVE_APP = 'live_app_base_url';
 const STORAGE_TOKEN = 'admin_token';
 const STORAGE_ADMIN_NAME = 'admin_display_name';
+const STORAGE_ADMIN_USER_ID = 'admin_user_id';
 const STORAGE_THEME = 'theme';
 
 const DEFAULT_SERVER = 'http://localhost:3000';
@@ -28,6 +31,8 @@ export type AdminSettings = {
   adminToken: string;
   /** Display name from last successful admin login */
   adminName: string;
+  /** Mongo user id of the logged-in admin (from JWT). */
+  adminUserId: string;
   darkMode: boolean;
   setServerUrl: (url: string) => void;
   setLiveAppUrl: (url: string) => void;
@@ -58,6 +63,13 @@ export function AdminSettingsProvider({ children }: { children: ReactNode }) {
     if (typeof localStorage === 'undefined') return '';
     return localStorage.getItem(STORAGE_ADMIN_NAME) || '';
   });
+  const [adminUserId, setAdminUserIdState] = useState(() => {
+    if (typeof localStorage === 'undefined') return '';
+    const stored = localStorage.getItem(STORAGE_ADMIN_USER_ID);
+    if (stored) return stored;
+    const token = localStorage.getItem(STORAGE_TOKEN);
+    return token ? getUserIdFromAccessToken(token) ?? '' : '';
+  });
   const [darkMode, setDarkModeState] = useState(() => {
     if (typeof localStorage === 'undefined') return false;
     return localStorage.getItem(STORAGE_THEME) === 'dark';
@@ -80,19 +92,30 @@ export function AdminSettingsProvider({ children }: { children: ReactNode }) {
 
   const setAdminToken = useCallback((token: string) => {
     setAdminTokenState(token);
-    if (token) localStorage.setItem(STORAGE_TOKEN, token);
-    else {
+    if (token) {
+      localStorage.setItem(STORAGE_TOKEN, token);
+      const userId = getUserIdFromAccessToken(token) ?? '';
+      setAdminUserIdState(userId);
+      if (userId) localStorage.setItem(STORAGE_ADMIN_USER_ID, userId);
+      else localStorage.removeItem(STORAGE_ADMIN_USER_ID);
+    } else {
       localStorage.removeItem(STORAGE_TOKEN);
       setAdminNameState('');
       localStorage.removeItem(STORAGE_ADMIN_NAME);
+      setAdminUserIdState('');
+      localStorage.removeItem(STORAGE_ADMIN_USER_ID);
     }
   }, []);
 
   const setAdminSession = useCallback((accessToken: string, displayName: string) => {
+    const userId = getUserIdFromAccessToken(accessToken) ?? '';
     setAdminTokenState(accessToken);
     localStorage.setItem(STORAGE_TOKEN, accessToken);
     setAdminNameState(displayName);
     localStorage.setItem(STORAGE_ADMIN_NAME, displayName);
+    setAdminUserIdState(userId);
+    if (userId) localStorage.setItem(STORAGE_ADMIN_USER_ID, userId);
+    else localStorage.removeItem(STORAGE_ADMIN_USER_ID);
   }, []);
 
   const setDarkMode = useCallback((dark: boolean) => {
@@ -102,9 +125,13 @@ export function AdminSettingsProvider({ children }: { children: ReactNode }) {
   const clearToken = useCallback(() => {
     setAdminTokenState('');
     setAdminNameState('');
+    setAdminUserIdState('');
     localStorage.removeItem(STORAGE_TOKEN);
     localStorage.removeItem(STORAGE_ADMIN_NAME);
+    localStorage.removeItem(STORAGE_ADMIN_USER_ID);
   }, []);
+
+  useEffect(() => registerAdminLogoutHandler(clearToken), [clearToken]);
 
   const logsApiBase = useMemo(() => `${serverUrl.replace(/\/$/, '')}/api`, [serverUrl]);
 
@@ -115,6 +142,7 @@ export function AdminSettingsProvider({ children }: { children: ReactNode }) {
       logsApiBase,
       adminToken,
       adminName,
+      adminUserId,
       darkMode,
       setServerUrl,
       setLiveAppUrl,
@@ -129,6 +157,7 @@ export function AdminSettingsProvider({ children }: { children: ReactNode }) {
       logsApiBase,
       adminToken,
       adminName,
+      adminUserId,
       darkMode,
       setServerUrl,
       setLiveAppUrl,
