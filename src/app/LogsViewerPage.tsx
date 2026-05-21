@@ -6,8 +6,9 @@ import { HttpLogsPanel } from '@/app/logs/HttpLogsPanel';
 import { BackupPanel } from '@/app/logs/BackupPanel';
 import { RedisPanel } from '@/app/logs/RedisPanel';
 import { SocketPanel } from '@/app/logs/SocketPanel';
+import { ServerControlPanel } from '@/app/logs/ServerControlPanel';
 
-type Tab = 'logs' | 'backup' | 'redis' | 'socket';
+type Tab = 'logs' | 'backup' | 'redis' | 'socket' | 'server';
 
 export function LogsViewerPage() {
   const { logsApiBase } = useAdminSettings();
@@ -20,6 +21,7 @@ export function LogsViewerPage() {
     { id: 'backup', labelKey: 'logsPage.tabs.backup' },
     { id: 'redis', labelKey: 'logsPage.tabs.redis' },
     { id: 'socket', labelKey: 'logsPage.tabs.socket' },
+    { id: 'server', labelKey: 'logsPage.tabs.server' },
   ];
 
   return (
@@ -67,6 +69,7 @@ export function LogsViewerPage() {
         {tab === 'backup' && <BackupPanel />}
         {tab === 'redis' && <RedisPanel />}
         {tab === 'socket' && <SocketPanel />}
+        {tab === 'server' && <ServerControlPanel />}
       </div>
     </div>
   );
