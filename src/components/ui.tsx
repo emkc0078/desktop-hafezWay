@@ -133,7 +133,9 @@ export function Field({
 }) {
   return (
     <label className={`block text-sm ${className}`}>
-      <span className="mb-1 block font-medium text-text-secondary dark:text-gray-300">{label}</span>
+      <span className="mb-1 block font-medium text-text-secondary dark:text-gray-200">
+        {label}
+      </span>
       {children}
     </label>
   );
@@ -177,7 +179,7 @@ export function TextArea({
 
 /** Shared table header cell classes (logical start alignment for LTR/RTL). */
 export const tableHeadClass =
-  'px-3 py-2 text-start text-xs font-semibold uppercase tracking-normal text-text-muted';
+  'px-3 py-2 text-start text-xs font-semibold uppercase tracking-normal text-text-muted dark:text-gray-400';
 
 /** Shared table body cell classes. */
 export const tableCellClass = 'min-w-0 px-3 py-2 text-start align-top';

@@ -31,6 +31,7 @@ fi
 CONFIG_PATHS=()
 [[ -f "$BACKEND_DIR/.env" ]] && CONFIG_PATHS+=("$BACKEND_DIR/.env")
 [[ -f "$FRONTEND_DIR/.env" ]] && CONFIG_PATHS+=("$FRONTEND_DIR/.env")
+[[ -f "$FRONTEND_DIR/.env.production" ]] && CONFIG_PATHS+=("$FRONTEND_DIR/.env.production")
 [[ -f "$NGINX_SITE" ]] && CONFIG_PATHS+=("$NGINX_SITE")
 
 if ((${#CONFIG_PATHS[@]} > 0)); then

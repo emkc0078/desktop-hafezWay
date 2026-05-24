@@ -16,6 +16,19 @@
   }
 }
 
+/* Design tokens are light-mode colors; remap for readable contrast on dark surfaces */
+@layer utilities {
+  .dark .text-text-primary {
+    @apply text-gray-100;
+  }
+  .dark .text-text-secondary {
+    @apply text-gray-300;
+  }
+  .dark .text-text-muted {
+    @apply text-gray-400;
+  }
+}
+
 /* RTL-aware spacing for flex rows */
 html[dir='rtl'] .rtl-flip-row {
   flex-direction: row-reverse;

@@ -6,6 +6,7 @@
 # leading "/"), so extracting with `-C /` puts them back where they came from:
 #   /var/www/back-hafezway/.env
 #   /var/www/front-hafezWay/.env
+#   /var/www/front-hafezWay/.env.production
 #   /etc/nginx/sites-available/hafezway.com
 #
 # Usage:
@@ -63,7 +64,7 @@ echo
 MEMBERS=()
 case "$ONLY" in
   env)
-    MEMBERS+=("${BACKEND_DIR#/}/.env" "${FRONTEND_DIR#/}/.env")
+    MEMBERS+=("${BACKEND_DIR#/}/.env" "${FRONTEND_DIR#/}/.env" "${FRONTEND_DIR#/}/.env.production")
     ;;
   nginx)
     MEMBERS+=("${NGINX_SITE#/}")
@@ -115,6 +116,7 @@ backup_existing() {
 if [[ "$ONLY" == "all" || "$ONLY" == "env" ]]; then
   backup_existing "$BACKEND_DIR/.env"
   backup_existing "$FRONTEND_DIR/.env"
+  backup_existing "$FRONTEND_DIR/.env.production"
 fi
 if [[ "$ONLY" == "all" || "$ONLY" == "nginx" ]]; then
   backup_existing "$NGINX_SITE"
@@ -158,6 +160,7 @@ if [[ "$ONLY" == "all" || "$ONLY" == "env" ]]; then
   echo "Securing .env files ..."
   secure_env "$BACKEND_DIR/.env"
   secure_env "$FRONTEND_DIR/.env"
+  secure_env "$FRONTEND_DIR/.env.production"
   echo
 fi
 
