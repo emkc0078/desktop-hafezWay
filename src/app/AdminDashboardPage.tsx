@@ -11,6 +11,9 @@ import {
   type SessionStudentReportRow,
 } from '@/components/StudentReportDetailModal';
 import { RoomParticipantsCell } from '@/components/RoomParticipantsCell';
+import { SignupOffersPanel } from '@/components/SignupOffersPanel';
+import { SignupPlansPanel } from '@/components/SignupPlansPanel';
+import { UserMonthlyAttendanceSection } from '@/components/UserMonthlyAttendanceSection';
 import {
   Btn,
   Card,
@@ -46,7 +49,9 @@ type Tab =
   | 'comments'
   | 'studentReports'
   | 'roomRatings'
-  | 'notifications';
+  | 'notifications'
+  | 'signupPlans'
+  | 'offers';
 
 const AUTH_PROVIDER_GOOGLE = 'google';
 
@@ -203,6 +208,7 @@ function isoToDatetimeLocalValue(iso: string): string {
 type AdminSubscriptionDraft = {
   signupPlan: string;
   subscriptionPaidAt: string;
+  subscriptionEndsAt: string;
   assignedStudyRoomId: string;
 };
 
@@ -214,6 +220,8 @@ function subscriptionDraftFromUserDetail(
     sub && typeof sub === 'object' && sub !== null ? (sub as Record<string, unknown>) : {};
   const planKey = typeof subObj.planKey === 'string' ? subObj.planKey : '';
   const paidAtIso = typeof subObj.paidAt === 'string' && subObj.paidAt.trim() !== '' ? subObj.paidAt : '';
+  const endsAtIso =
+    typeof subObj.endsAt === 'string' && subObj.endsAt.trim() !== '' ? subObj.endsAt : '';
   const ar = subObj.assignedRoom;
   let roomId = '';
   if (ar && typeof ar === 'object' && ar !== null && typeof (ar as { id?: string }).id === 'string') {
@@ -227,6 +235,7 @@ function subscriptionDraftFromUserDetail(
   return {
     signupPlan: planKey || nestedPlan,
     subscriptionPaidAt: paidAtIso ? isoToDatetimeLocalValue(paidAtIso) : '',
+    subscriptionEndsAt: endsAtIso ? isoToDatetimeLocalValue(endsAtIso) : '',
     assignedStudyRoomId: roomId || '__none__',
   };
 };
@@ -778,9 +787,11 @@ export function AdminDashboardPage() {
     const baseUrl = serverUrl.replace(/\/$/, '');
     const planTrim = subEdit.signupPlan.trim();
     const paidTrim = subEdit.subscriptionPaidAt.trim();
+    const endsTrim = subEdit.subscriptionEndsAt.trim();
     const body: Record<string, unknown> = {
       signupPlan: planTrim === '' ? null : planTrim,
       subscriptionPaidAt: paidTrim === '' ? null : new Date(paidTrim).toISOString(),
+      subscriptionEndsAt: endsTrim === '' ? null : new Date(endsTrim).toISOString(),
       assignedStudyRoomId:
         subEdit.assignedStudyRoomId === '__none__' ? null : subEdit.assignedStudyRoomId,
     };
@@ -1129,6 +1140,8 @@ export function AdminDashboardPage() {
             ['studentReports', t('dashboard.tabs.studentReports')],
             ['roomRatings', t('dashboard.tabs.roomRatings')],
             ['notifications', t('dashboard.tabs.notifications')],
+            ['signupPlans', t('dashboard.tabs.signupPlans')],
+            ['offers', t('dashboard.tabs.offers')],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -1348,11 +1361,12 @@ export function AdminDashboardPage() {
               <>
                 <TableShell
                   className="admin-striped-table admin-users-table w-full"
-                  minWidth={1650}
+                  minWidth={1780}
                   colWidths={[
                     '150px',
                     '240px',
                     '95px',
+                    '140px',
                     '110px',
                     '120px',
                     '95px',
@@ -1366,6 +1380,7 @@ export function AdminDashboardPage() {
                         t('dashboard.users.cols.name'),
                         t('dashboard.users.cols.email'),
                         t('dashboard.users.cols.role'),
+                        t('dashboard.users.cols.plan'),
                         t('dashboard.users.cols.signIn'),
                         t('dashboard.users.cols.profile'),
                         t('dashboard.users.cols.active'),
@@ -1390,6 +1405,15 @@ export function AdminDashboardPage() {
                         </td>
                         <td className={`${tableCellClass} text-base break-all`}>{escapeHtml(user.email)}</td>
                         <td className={`${tableCellClass} text-base`}>{escapeHtml(user.role)}</td>
+                        <td className={`${tableCellClass} text-base`}>
+                          {typeof user.signupPlan === 'string' && user.signupPlan.trim() !== '' ? (
+                            <span title={user.signupPlan}>
+                              {escapeHtml(signupQuizOptionLabel(user.signupPlan, t))}
+                            </span>
+                          ) : (
+                            <span className="text-text-muted">{t('dashboard.users.noPlan')}</span>
+                          )}
+                        </td>
                         <td className={tableCellClass}>
                           <UserSignInBadge provider={user.provider} t={t} />
                         </td>
@@ -1860,6 +1884,9 @@ export function AdminDashboardPage() {
             </Card>
           </div>
         )}
+
+        {tab === 'signupPlans' && <SignupPlansPanel />}
+        {tab === 'offers' && <SignupOffersPanel />}
       </main>
 
       {selectedSessionReport ? (
@@ -2058,6 +2085,18 @@ export function AdminDashboardPage() {
               })()}
             </div>
 
+            {userModal && String(userDetail.role ?? '') === 'student' && adminToken ? (
+              <UserMonthlyAttendanceSection
+                studentId={userModal.id}
+                serverUrl={serverUrl}
+                adminToken={adminToken}
+              />
+            ) : userDetail.role && String(userDetail.role) !== 'student' ? (
+              <p className="border-t border-gray-200 pt-4 text-xs text-text-muted dark:border-gray-700">
+                {t('dashboard.users.attendanceStudentsOnly')}
+              </p>
+            ) : null}
+
             {subEdit ? (
               <div className="border-t border-blue-900/15 bg-blue-50/40 px-1 py-4 dark:border-blue-900/40 dark:bg-blue-950/20">
                 <p className="mb-1 font-semibold text-text-secondary">
@@ -2093,6 +2132,34 @@ export function AdminDashboardPage() {
                       {t('dashboard.users.subscriptionPaidAtHint')}
                     </span>
                   </Field>
+                  <Field label={t('dashboard.users.subscriptionEndsAt')} className="sm:col-span-2">
+                    <Input
+                      type="datetime-local"
+                      value={subEdit.subscriptionEndsAt}
+                      onChange={(e) =>
+                        setSubEdit((s) =>
+                          s ? { ...s, subscriptionEndsAt: e.target.value } : s,
+                        )
+                      }
+                    />
+                    <span className="mt-1 block text-xs text-text-muted">
+                      {t('dashboard.users.subscriptionEndsAtHint')}
+                    </span>
+                  </Field>
+                  {(() => {
+                    const subRaw = userDetail.subscription;
+                    if (!subRaw || typeof subRaw !== 'object') return null;
+                    const active = (subRaw as { accessActive?: boolean }).accessActive;
+                    if (active === undefined) return null;
+                    return (
+                      <p className="sm:col-span-2 text-sm text-text-secondary">
+                        <strong>{t('dashboard.users.subscriptionAccessLabel')}:</strong>{' '}
+                        {active
+                          ? t('dashboard.users.subscriptionAccessActive')
+                          : t('dashboard.users.subscriptionAccessExpired')}
+                      </p>
+                    );
+                  })()}
                   <Field label={t('dashboard.users.subscriptionRoom')} className="sm:col-span-2">
                     <Select
                       value={subEdit.assignedStudyRoomId}
