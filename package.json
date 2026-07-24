@@ -1,7 +1,7 @@
 {
   "name": "desktop-hafezway-admin",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -42,9 +42,17 @@
         "dmg"
       ],
       "category": "public.app-category.utilities"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "emkc0078",
+        "repo": "desktop-hafezWay"
+      }
+    ]
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-router-dom": "^7.11.0",
