@@ -1,20 +1,24 @@
 /** Keep in sync with `back-hafezway/src/utils/room.enums.ts`. */
 
-export enum RoomScheduleDay {
-  SUNDAY = 'sunday',
-  MONDAY = 'monday',
-  TUESDAY = 'tuesday',
-  WEDNESDAY = 'wednesday',
-  THURSDAY = 'thursday',
-  FRIDAY = 'friday',
-  SATURDAY = 'saturday',
-}
+export const RoomScheduleDay = {
+  SUNDAY: 'sunday',
+  MONDAY: 'monday',
+  TUESDAY: 'tuesday',
+  WEDNESDAY: 'wednesday',
+  THURSDAY: 'thursday',
+  FRIDAY: 'friday',
+  SATURDAY: 'saturday',
+} as const;
 
-export enum RoomListStatus {
-  ACTIVE = 'active',
-  INACTIVE = 'inactive',
-  ALL = 'all',
-}
+export type RoomScheduleDay = (typeof RoomScheduleDay)[keyof typeof RoomScheduleDay];
+
+export const RoomListStatus = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+  ALL: 'all',
+} as const;
+
+export type RoomListStatus = (typeof RoomListStatus)[keyof typeof RoomListStatus];
 
 export const ROOM_SCHEDULE_DAY_VALUES = Object.values(
   RoomScheduleDay,

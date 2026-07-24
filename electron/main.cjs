@@ -6,6 +6,13 @@ const os = require('os');
 const useViteDevServer =
   process.env.NODE_ENV === 'development' && !app.isPackaged;
 
+function getBackupScriptsDir() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'scripts', 'hafezway-backup');
+  }
+  return path.join(process.cwd(), 'scripts', 'hafezway-backup');
+}
+
 ipcMain.handle('admin:get-downloads-path', () => app.getPath('downloads'));
 
 ipcMain.handle('admin:open-downloads-folder', async () => {
@@ -64,7 +71,7 @@ ipcMain.handle('admin:list-local-backups', async () => {
 });
 
 ipcMain.handle('admin:run-local-mongo-images-pull', async () => {
-  const scriptPath = path.join(process.cwd(), 'scripts', 'hafezway-backup', 'pull-mongo-images-daily.sh');
+  const scriptPath = path.join(getBackupScriptsDir(), 'pull-mongo-images-daily.sh');
   if (!fs.existsSync(scriptPath)) {
     return { ok: false, error: `Script not found: ${scriptPath}` };
   }
@@ -192,7 +199,7 @@ ipcMain.handle('admin:run-restore-on-server', async (_evt, rawOpts) => {
     return { ok: false, error: `Invalid env owner: ${envOwner}` };
   }
 
-  const scriptPath = path.join(process.cwd(), 'scripts', 'hafezway-backup', 'restore-on-server.sh');
+  const scriptPath = path.join(getBackupScriptsDir(), 'restore-on-server.sh');
   if (!fs.existsSync(scriptPath)) {
     return { ok: false, error: `Restore script not found at ${scriptPath}` };
   }
