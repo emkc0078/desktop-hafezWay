@@ -5,14 +5,29 @@ import {
   DEFAULT_SERVER,
   DEFAULT_LIVE_APP,
   REMOTE_SERVER,
+  STORAGE_REMEMBER_ME,
+  STORAGE_REMEMBERED_EMAIL,
 } from '@/context/AdminSettingsContext';
 import { useT } from '@/context/LocaleContext';
 import { loginWithPassword, verifyAdministratorAccess } from '@/utils/authLogin';
 import { Btn, Field, Input } from '@/components/ui';
+
 type Props = {
   /** Show a short hint under the form (e.g. logs page) */
   showTestHint?: boolean;
 };
+
+function readRememberMeDefault(): boolean {
+  if (typeof localStorage === 'undefined') return true;
+  const stored = localStorage.getItem(STORAGE_REMEMBER_ME);
+  // Default on for returning admins; only off when explicitly disabled.
+  return stored !== '0';
+}
+
+function readRememberedEmail(): string {
+  if (typeof localStorage === 'undefined') return '';
+  return localStorage.getItem(STORAGE_REMEMBERED_EMAIL) || '';
+}
 
 export function AdminAuthBar({ showTestHint }: Props) {
   const t = useT();
@@ -28,8 +43,10 @@ export function AdminAuthBar({ showTestHint }: Props) {
     logsApiBase,
   } = useAdminSettings();
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => readRememberedEmail());
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => readRememberMeDefault());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,8 +67,18 @@ export function AdminAuthBar({ showTestHint }: Props) {
     try {
       const session = await loginWithPassword(serverUrl, email, password);
       await verifyAdministratorAccess(logsApiBase, session.accessToken);
-      setAdminSession(session.accessToken, session.name || email.trim());
+      setAdminSession(session.accessToken, session.name || email.trim(), {
+        rememberMe,
+      });
+      if (rememberMe) {
+        localStorage.setItem(STORAGE_REMEMBERED_EMAIL, email.trim());
+        localStorage.setItem(STORAGE_REMEMBER_ME, '1');
+      } else {
+        localStorage.removeItem(STORAGE_REMEMBERED_EMAIL);
+        localStorage.setItem(STORAGE_REMEMBER_ME, '0');
+      }
       setPassword('');
+      setShowPassword(false);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -179,43 +206,70 @@ export function AdminAuthBar({ showTestHint }: Props) {
             onSubmit={(e) => void onLogin(e)}
             className="flex flex-col gap-3 border-t border-gray-200/90 bg-white/90 p-4 dark:border-gray-600 dark:bg-gray-950/30"
           >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={t('auth.email')}>
-              <Input
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@example.com"
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={t('auth.email')}>
+                <Input
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@example.com"
+                  disabled={busy}
+                />
+              </Field>
+              <Field label={t('auth.password')}>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    disabled={busy}
+                    className="pe-11"
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 end-0 flex items-center px-3 text-xs font-medium text-text-muted hover:text-text-primary disabled:opacity-50"
+                    onClick={() => setShowPassword((v) => !v)}
+                    disabled={busy}
+                    aria-label={
+                      showPassword ? t('auth.hidePassword') : t('auth.showPassword')
+                    }
+                    aria-pressed={showPassword}
+                  >
+                    {showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
+                  </button>
+                </div>
+              </Field>
+            </div>
+
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/40 dark:border-gray-500 dark:bg-gray-950"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
                 disabled={busy}
               />
-            </Field>
-            <Field label={t('auth.password')}>
-              <Input
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                disabled={busy}
-              />
-            </Field>
-          </div>
-          {error && (
-            <p className="text-sm text-red-600 dark:text-red-400" role="alert">
-              {error}
-            </p>
-          )}
-          <div className="flex flex-wrap items-center gap-2 rtl-flip-row">
-            <Btn variant="primary" type="submit" disabled={busy}>
-              {busy ? t('auth.signingIn') : t('auth.signIn')}
-            </Btn>
-            <span className="text-xs text-text-muted">{t('auth.loginHint')}</span>
-          </div>
-          {showTestHint ? (
-            <p className="text-xs text-text-muted">{t('auth.logsHint')}</p>
-          ) : null}
-        </form>
+              <span>{t('auth.rememberMe')}</span>
+            </label>
+
+            {error && (
+              <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 rtl-flip-row">
+              <Btn variant="primary" type="submit" disabled={busy}>
+                {busy ? t('auth.signingIn') : t('auth.signIn')}
+              </Btn>
+              <span className="text-xs text-text-muted">{t('auth.loginHint')}</span>
+            </div>
+            {showTestHint ? (
+              <p className="text-xs text-text-muted">{t('auth.logsHint')}</p>
+            ) : null}
+          </form>
         </div>
       )}
     </div>

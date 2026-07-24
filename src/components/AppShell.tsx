@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAdminSettings } from '@/context/AdminSettingsContext';
 import { useLocale } from '@/context/LocaleContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { AppUpdateBanner } from '@/components/AppUpdateBanner';
 import { Btn, Modal } from '@/components/ui';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -58,6 +59,8 @@ export function AppShell() {
           </div>
         </div>
       </Modal>
+
+      <AppUpdateBanner />
 
       <div className="border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 rtl-flip-row">

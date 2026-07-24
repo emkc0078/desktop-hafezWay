@@ -38,6 +38,20 @@ export type RestoreOnServerResult = {
   homeHint?: string;
 };
 
+export type AppUpdateInfo = {
+  version: string;
+  currentVersion: string;
+  releaseNotes?: string;
+  simulated?: boolean;
+};
+
+export type AppUpdateProgress = {
+  percent: number;
+  transferred: number;
+  total: number;
+  bytesPerSecond: number;
+};
+
 declare global {
   interface Window {
     hafezwayAdmin?: {
@@ -59,6 +73,15 @@ declare global {
       listLocalConfigsArchives: () => Promise<ListLocalConfigsArchivesResult>;
       pickConfigsArchive: () => Promise<PickConfigsArchiveResult>;
       runRestoreOnServer: (opts: RestoreOnServerOptions) => Promise<RestoreOnServerResult>;
+
+      getAppVersion: () => Promise<string>;
+      checkForUpdates: () => Promise<{ ok: boolean; simulated?: boolean; error?: string; updateInfo?: unknown }>;
+      downloadUpdate: () => Promise<{ ok: boolean; simulated?: boolean; error?: string }>;
+      installUpdate: () => Promise<{ ok: boolean; simulated?: boolean }>;
+      onUpdateAvailable: (listener: (info: AppUpdateInfo) => void) => () => void;
+      onUpdateDownloadProgress: (listener: (progress: AppUpdateProgress) => void) => () => void;
+      onUpdateDownloaded: (listener: (info: AppUpdateInfo) => void) => () => void;
+      onUpdateError: (listener: (message: string) => void) => () => void;
     };
   }
 }
