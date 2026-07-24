@@ -192,7 +192,9 @@ export function TableShell({
 }: HTMLAttributes<HTMLDivElement> & { colWidths?: string[]; minWidth?: number | string }) {
   return (
     <div
-      className={`overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-600 ${className}`}
+      className={`rounded-lg border border-gray-200 dark:border-gray-600 ${
+        minWidth != null ? 'overflow-x-auto' : 'overflow-x-hidden'
+      } ${className}`}
     >
       <table
         className="admin-data-table w-full border-collapse text-sm"

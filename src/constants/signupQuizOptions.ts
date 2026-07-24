@@ -46,11 +46,13 @@ export const SignupPlan = {
   EIGHT_HOURS_600: 'eight_hours_600',
 } as const;
 
-export enum SignupUserType {
-  MALE = 'male',
-  FEMALE = 'female',
-  CHILDREN = 'children',
-}
+export const SignupUserType = {
+  MALE: 'male',
+  FEMALE: 'female',
+  CHILDREN: 'children',
+} as const;
+
+export type SignupUserType = (typeof SignupUserType)[keyof typeof SignupUserType];
 
 export const SIGNUP_USER_TYPE_VALUES = Object.values(SignupUserType) as SignupUserType[];
 

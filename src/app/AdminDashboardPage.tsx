@@ -10,7 +10,7 @@ import {
   StudentReportDetailModal,
   type SessionStudentReportRow,
 } from '@/components/StudentReportDetailModal';
-import { RoomParticipantsCell } from '@/components/RoomParticipantsCell';
+import { RoomParticipantsCell, formatRoomOccupancy } from '@/components/RoomParticipantsCell';
 import { SignupOffersPanel } from '@/components/SignupOffersPanel';
 import { SignupPlansPanel } from '@/components/SignupPlansPanel';
 import { UserMonthlyAttendanceSection } from '@/components/UserMonthlyAttendanceSection';
@@ -54,10 +54,22 @@ type Tab =
   | 'offers';
 
 const AUTH_PROVIDER_GOOGLE = 'google';
+const AUTH_PROVIDER_TWITTER = 'twitter';
 
-function isGoogleAuthUser(provider: unknown): boolean {
-  return String(provider ?? '').toLowerCase() === AUTH_PROVIDER_GOOGLE;
+function resolveUserSignInKind(provider: unknown): 'google' | 'twitter' | 'facebook' | 'email' {
+  const normalized = String(provider ?? '').toLowerCase();
+  if (normalized === AUTH_PROVIDER_GOOGLE) return 'google';
+  if (normalized === AUTH_PROVIDER_TWITTER || normalized === 'x') return 'twitter';
+  if (normalized === 'facebook') return 'facebook';
+  return 'email';
 }
+
+const SIGN_IN_BADGE_CLASS: Record<ReturnType<typeof resolveUserSignInKind>, string> = {
+  google: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200',
+  twitter: 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900',
+  facebook: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200',
+  email: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200',
+};
 
 function UserSignInBadge({
   provider,
@@ -66,16 +78,21 @@ function UserSignInBadge({
   provider: unknown;
   t: (key: string) => string;
 }) {
-  const google = isGoogleAuthUser(provider);
+  const kind = resolveUserSignInKind(provider);
+  const labelKey =
+    kind === 'google'
+      ? 'dashboard.users.signInGoogle'
+      : kind === 'twitter'
+        ? 'dashboard.users.signInX'
+        : kind === 'facebook'
+          ? 'dashboard.users.signInFacebook'
+          : 'dashboard.users.signInEmail';
+
   return (
     <span
-      className={`inline-flex rounded-full px-2.5 py-1 text-sm font-medium ${
-        google
-          ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200'
-          : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
-      }`}
+      className={`inline-flex rounded-full px-2.5 py-1 text-sm font-medium ${SIGN_IN_BADGE_CLASS[kind]}`}
     >
-      {google ? t('dashboard.users.signInGoogle') : t('dashboard.users.signInEmail')}
+      {t(labelKey)}
     </span>
   );
 }
@@ -292,22 +309,52 @@ function scheduleTimeOptionsForSelect(
   return values.map((value) => ({ value, label: value }));
 }
 
+/** Normalize Mongo/API user or ObjectId refs to a string id. */
+function entityId(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number') {
+    const s = String(value).trim();
+    return s === '[object Object]' ? '' : s;
+  }
+  if (typeof value === 'object') {
+    const o = value as { id?: unknown; _id?: unknown; toString?: () => string };
+    const fromId = entityId(o.id);
+    if (fromId) return fromId;
+    const fromUnderscore = entityId(o._id);
+    if (fromUnderscore) return fromUnderscore;
+    if (typeof o.toString === 'function' && o.toString !== Object.prototype.toString) {
+      const s = o.toString().trim();
+      if (s && s !== '[object Object]') return s;
+    }
+  }
+  return '';
+}
+
 function scheduleFromRoomRecord(room: Record<string, unknown>): {
-  scheduleDay: RoomScheduleDay | '';
+  scheduleDays: RoomScheduleDay[];
   scheduleTimeFrom: string;
   scheduleTimeTo: string;
 } {
   const raw = room.schedule;
   if (!raw || typeof raw !== 'object') {
-    return { scheduleDay: '', scheduleTimeFrom: '', scheduleTimeTo: '' };
+    return { scheduleDays: [], scheduleTimeFrom: '', scheduleTimeTo: '' };
   }
   const s = raw as Record<string, unknown>;
-  const day = typeof s.dayOfWeek === 'string' ? s.dayOfWeek.toLowerCase() : '';
-  const scheduleDay = (ROOM_SCHEDULE_DAY_VALUES as readonly string[]).includes(day)
-    ? (day as RoomScheduleDay)
-    : '';
+  const fromArray = Array.isArray(s.daysOfWeek)
+    ? s.daysOfWeek
+        .map((d) => (typeof d === 'string' ? d.toLowerCase() : ''))
+        .filter((d): d is RoomScheduleDay =>
+          (ROOM_SCHEDULE_DAY_VALUES as readonly string[]).includes(d),
+        )
+    : [];
+  const single =
+    typeof s.dayOfWeek === 'string' ? s.dayOfWeek.toLowerCase() : '';
+  const fromSingle = (ROOM_SCHEDULE_DAY_VALUES as readonly string[]).includes(single)
+    ? [single as RoomScheduleDay]
+    : [];
+  const scheduleDays = [...new Set(fromArray.length ? fromArray : fromSingle)];
   return {
-    scheduleDay,
+    scheduleDays,
     scheduleTimeFrom: typeof s.timeFrom === 'string' ? s.timeFrom : '',
     scheduleTimeTo: typeof s.timeTo === 'string' ? s.timeTo : '',
   };
@@ -317,10 +364,10 @@ function formatRoomScheduleCell(
   room: Record<string, unknown>,
   t: (key: string) => string,
 ): string {
-  const { scheduleDay, scheduleTimeFrom, scheduleTimeTo } = scheduleFromRoomRecord(room);
-  if (!scheduleDay || !scheduleTimeFrom || !scheduleTimeTo) return '—';
-  const dayLabel = t(`dashboard.rooms.scheduleDays.${scheduleDay}`);
-  return `${dayLabel} ${scheduleTimeFrom}–${scheduleTimeTo}`;
+  const { scheduleDays, scheduleTimeFrom, scheduleTimeTo } = scheduleFromRoomRecord(room);
+  if (!scheduleDays.length || !scheduleTimeFrom || !scheduleTimeTo) return '—';
+  const dayLabels = scheduleDays.map((d) => t(`dashboard.rooms.scheduleDays.${d}`));
+  return `${dayLabels.join(', ')} ${scheduleTimeFrom}–${scheduleTimeTo}`;
 }
 
 export function AdminDashboardPage() {
@@ -410,7 +457,12 @@ export function AdminDashboardPage() {
 
   const loadRooms = useCallback(async () => {
     if (!adminToken) return;
-    setRoomsState({ loading: true });
+    // Keep existing rows visible while refreshing so teacher selects don't reset to empty.
+    setRoomsState((prev) => ({
+      ...prev,
+      loading: !prev.data,
+      error: undefined,
+    }));
     try {
       let url = `${serverUrl}/rooms?page=${pages.rooms}&limit=20&status=${roomStatusFilter}`;
       if (roomSearch) url += `&search=${encodeURIComponent(roomSearch)}`;
@@ -420,7 +472,7 @@ export function AdminDashboardPage() {
       setRoomsState({ loading: false, data: roomsData });
     } catch (e) {
       const err = e as Error;
-      setRoomsState({ loading: false, error: err.message });
+      setRoomsState((prev) => ({ ...prev, loading: false, error: err.message }));
       showMessage(t('dashboard.rooms.loadError', { message: err.message }), 'error');
     }
   }, [adminToken, serverUrl, pages.rooms, roomSearch, roomTypeFilter, roomStatusFilter, showMessage, t]);
@@ -578,10 +630,142 @@ export function AdminDashboardPage() {
     description: '',
     type: '',
     participants: '',
-    scheduleDay: '' as RoomScheduleDay | '',
+    reservedTeacherId: '__none__',
+    scheduleDays: [] as RoomScheduleDay[],
     scheduleTimeFrom: '',
     scheduleTimeTo: '',
   });
+  const [roomTeacherOptions, setRoomTeacherOptions] = useState<
+    { id: string; label: string }[]
+  >([]);
+
+  const loadRoomTeacherOptions = useCallback(async () => {
+    if (!adminToken) return;
+    try {
+      const data = await adminFetchJson<{ data?: { users?: Record<string, unknown>[] } }>(
+        `${serverUrl}/getUsers?page=1&limit=200&role=teacher`,
+        adminToken,
+      );
+      const users = data.data?.users ?? [];
+      setRoomTeacherOptions(
+        users
+          .filter((u) => {
+            const role = String(u.role ?? '').toLowerCase();
+            if (role && role !== 'teacher') return false;
+            return u.active !== false;
+          })
+          .map((u) => {
+            // `/getUsers` returns `id`; some payloads still use `_id`.
+            const id = String(u.id ?? u._id ?? '').trim();
+            const first = String(u.firstName ?? '').trim();
+            const last = String(u.lastName ?? '').trim();
+            const email = String(u.email ?? '').trim();
+            const name = `${first} ${last}`.trim();
+            return { id, label: name || email || id };
+          })
+          .filter((o) => o.id)
+          .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })),
+      );
+    } catch {
+      setRoomTeacherOptions([]);
+    }
+  }, [adminToken, serverUrl]);
+
+  useEffect(() => {
+    if (!adminToken || tab !== 'rooms') return;
+    void loadRoomTeacherOptions();
+  }, [adminToken, tab, loadRoomTeacherOptions]);
+
+  const reservedTeacherIdFromRoom = (room: Record<string, unknown>): string => {
+    const id = entityId(room.reservedTeacher);
+    return id || '__none__';
+  };
+
+  const patchRoomReservedTeacherLocal = useCallback(
+    (roomId: string, reservedTeacher: unknown) => {
+      setRoomsState((prev) => {
+        const raw = prev.data as
+          | { rooms?: Record<string, unknown>[]; pagination?: unknown }
+          | undefined;
+        if (!raw?.rooms) return prev;
+        return {
+          ...prev,
+          data: {
+            ...raw,
+            rooms: raw.rooms.map((r) =>
+              entityId(r._id) === roomId || entityId(r.id) === roomId
+                ? { ...r, reservedTeacher }
+                : r,
+            ),
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const assignRoomTeacher = useCallback(
+    async (roomId: string, teacherId: string) => {
+      if (!adminToken) return;
+      const reservedTeacherId = teacherId === '__none__' ? null : teacherId || null;
+      const teacherOpt = reservedTeacherId
+        ? roomTeacherOptions.find((o) => o.id === reservedTeacherId)
+        : undefined;
+      const nameParts = (teacherOpt?.label ?? '').trim().split(/\s+/).filter(Boolean);
+      const optimisticTeacher = reservedTeacherId
+        ? {
+            _id: reservedTeacherId,
+            id: reservedTeacherId,
+            firstName: nameParts[0] ?? '',
+            lastName: nameParts.slice(1).join(' '),
+            email: '',
+          }
+        : null;
+
+      // Keep the select on the chosen teacher while the request runs.
+      patchRoomReservedTeacherLocal(roomId, optimisticTeacher);
+
+      try {
+        const res = await adminFetchJson<{ data?: Record<string, unknown> }>(
+          `${serverUrl}/rooms/${roomId}`,
+          adminToken,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ reservedTeacherId }),
+          },
+        );
+        const fromServer = res.data?.reservedTeacher;
+        patchRoomReservedTeacherLocal(
+          roomId,
+          fromServer !== undefined ? fromServer : optimisticTeacher,
+        );
+        showMessage(
+          reservedTeacherId
+            ? t('dashboard.rooms.teacherAssigned')
+            : t('dashboard.rooms.teacherCleared'),
+          'success',
+        );
+        void loadRooms();
+      } catch (err) {
+        void loadRooms();
+        showMessage(
+          t('dashboard.rooms.teacherAssignError', {
+            message: (err as Error).message,
+          }),
+          'error',
+        );
+      }
+    },
+    [
+      adminToken,
+      serverUrl,
+      showMessage,
+      t,
+      loadRooms,
+      roomTeacherOptions,
+      patchRoomReservedTeacherLocal,
+    ],
+  );
 
   const openCreateRoom = () => {
     setEditingRoomId(null);
@@ -591,11 +775,25 @@ export function AdminDashboardPage() {
       description: '',
       type: '',
       participants: '',
-      scheduleDay: '',
+      reservedTeacherId: '__none__',
+      scheduleDays: [],
       scheduleTimeFrom: '09:00',
       scheduleTimeTo: '10:00',
     });
     setRoomModal(true);
+    void loadRoomTeacherOptions();
+  };
+
+  const toggleScheduleDay = (day: RoomScheduleDay) => {
+    setRoomForm((f) => {
+      const has = f.scheduleDays.includes(day);
+      return {
+        ...f,
+        scheduleDays: has
+          ? f.scheduleDays.filter((d) => d !== day)
+          : [...f.scheduleDays, day],
+      };
+    });
   };
 
   const editRoom = async (id: string) => {
@@ -607,15 +805,19 @@ export function AdminDashboardPage() {
       );
       const room = data.data;
       setEditingRoomId(id);
+      const reserved = room.reservedTeacher;
+      const reservedTeacherId = entityId(reserved) || '__none__';
       setRoomForm({
         nameAr: String(room.nameAr ?? ''),
         nameEn: String(room.nameEn ?? ''),
         description: String(room.description ?? ''),
         type: String(room.type ?? ''),
         participants: '',
+        reservedTeacherId,
         ...scheduleFromRoomRecord(room),
       });
       setRoomModal(true);
+      void loadRoomTeacherOptions();
     } catch (e) {
       showMessage(t('dashboard.rooms.loadRoomError', { message: (e as Error).message }), 'error');
     }
@@ -638,10 +840,10 @@ export function AdminDashboardPage() {
       showMessage(t('dashboard.rooms.requiredFields'), 'error');
       return;
     }
-    const scheduleDay = roomForm.scheduleDay;
+    const scheduleDays = roomForm.scheduleDays;
     const scheduleTimeFrom = roomForm.scheduleTimeFrom.trim();
     const scheduleTimeTo = roomForm.scheduleTimeTo.trim();
-    if (!scheduleDay || !scheduleTimeFrom || !scheduleTimeTo) {
+    if (!scheduleDays.length || !scheduleTimeFrom || !scheduleTimeTo) {
       showMessage(t('dashboard.rooms.scheduleRequired'), 'error');
       return;
     }
@@ -650,14 +852,20 @@ export function AdminDashboardPage() {
       return;
     }
     try {
+      const reservedTeacherId =
+        roomForm.reservedTeacherId === '__none__'
+          ? null
+          : roomForm.reservedTeacherId || null;
       const body = {
         nameAr,
         nameEn,
         description: description || undefined,
         type,
         participantIds: participantIds.length ? participantIds : undefined,
+        reservedTeacherId,
         schedule: {
-          dayOfWeek: scheduleDay,
+          daysOfWeek: scheduleDays,
+          dayOfWeek: scheduleDays[0],
           timeFrom: scheduleTimeFrom,
           timeTo: scheduleTimeTo,
         },
@@ -1212,17 +1420,17 @@ export function AdminDashboardPage() {
               <>
                 <TableShell
                   className="admin-striped-table w-full"
-                  minWidth={1900}
                   colWidths={[
-                    '150px',
-                    '150px',
-                    '95px',
-                    '170px',
-                    '70px',
-                    '280px',
-                    '140px',
-                    '95px',
-                    '380px',
+                    '10%',
+                    '10%',
+                    '7%',
+                    '11%',
+                    '5%',
+                    '13%',
+                    '12%',
+                    '9%',
+                    '7%',
+                    '16%',
                   ]}
                 >
                   <thead>
@@ -1234,6 +1442,7 @@ export function AdminDashboardPage() {
                         t('dashboard.rooms.cols.schedule'),
                         t('dashboard.rooms.cols.cap'),
                         t('dashboard.rooms.cols.participants'),
+                        t('dashboard.rooms.cols.teacher'),
                         t('dashboard.rooms.cols.createdBy'),
                         t('dashboard.rooms.cols.status'),
                         t('dashboard.rooms.cols.actions'),
@@ -1250,37 +1459,86 @@ export function AdminDashboardPage() {
                   <tbody>
                     {roomsData.rooms.map((room) => (
                       <tr key={String(room._id)}>
-                        <td className="px-3 py-2">{escapeHtml(room.nameAr)}</td>
-                        <td className="px-3 py-2">{escapeHtml(room.nameEn)}</td>
-                        <td className="px-3 py-2">
+                        <td className={`${tableCellClass} break-words`}>
+                          {escapeHtml(room.nameAr)}
+                        </td>
+                        <td className={`${tableCellClass} break-words`}>
+                          {escapeHtml(room.nameEn)}
+                        </td>
+                        <td className={tableCellClass}>
                           {t('dashboard.rooms.persons', { count: Number(room.type) })}
                         </td>
-                        <td className="px-3 py-2 text-xs whitespace-nowrap">
+                        <td className={`${tableCellClass} text-xs break-words`}>
                           {formatRoomScheduleCell(room, t)}
                         </td>
-                        <td className="px-3 py-2">{String(room.capacity)}</td>
+                        <td className={tableCellClass}>{formatRoomOccupancy(room)}</td>
                         <td className={`${tableCellClass} text-xs`}>
                           <RoomParticipantsCell
                             room={room}
                             emptyLabel={t('dashboard.rooms.noParticipants')}
                           />
                         </td>
-                        <td className="px-3 py-2 text-xs">
+                        <td className={`${tableCellClass} text-xs`}>
+                          <Select
+                            className="w-full max-w-full text-xs"
+                            value={reservedTeacherIdFromRoom(room)}
+                            onChange={(e) =>
+                              void assignRoomTeacher(
+                                entityId(room._id) || entityId(room.id),
+                                e.target.value,
+                              )
+                            }
+                          >
+                            <option value="__none__">
+                              {t('dashboard.rooms.noTeacherOption')}
+                            </option>
+                            {(() => {
+                              const currentId = reservedTeacherIdFromRoom(room);
+                              const opts = [...roomTeacherOptions];
+                              if (
+                                currentId !== '__none__' &&
+                                !opts.some((o) => o.id === currentId)
+                              ) {
+                                const rt = room.reservedTeacher;
+                                let label = currentId;
+                                if (rt && typeof rt === 'object' && rt !== null) {
+                                  const first = String(
+                                    (rt as { firstName?: string }).firstName ?? '',
+                                  ).trim();
+                                  const last = String(
+                                    (rt as { lastName?: string }).lastName ?? '',
+                                  ).trim();
+                                  const email = String(
+                                    (rt as { email?: string }).email ?? '',
+                                  ).trim();
+                                  label = `${first} ${last}`.trim() || email || currentId;
+                                }
+                                opts.unshift({ id: currentId, label });
+                              }
+                              return opts.map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt.label}
+                                </option>
+                              ));
+                            })()}
+                          </Select>
+                        </td>
+                        <td className={`${tableCellClass} text-xs break-words`}>
                           {room.createdBy &&
                           typeof room.createdBy === 'object' &&
                           room.createdBy !== null
                             ? `${(room.createdBy as { firstName?: string }).firstName ?? ''} ${(room.createdBy as { lastName?: string }).lastName ?? ''}`
                             : t('common.na')}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className={tableCellClass}>
                           {room.isActive !== false ? (
                             <span className="text-emerald-600">{t('dashboard.rooms.active')}</span>
                           ) : (
                             <span className="text-red-600">{t('dashboard.rooms.inactive')}</span>
                           )}
                         </td>
-                        <td className={`${tableCellClass} whitespace-nowrap`}>
-                          <div className="flex flex-nowrap gap-2">
+                        <td className={tableCellClass}>
+                          <div className="flex flex-wrap gap-1">
                           <Btn
                             variant="info"
                             className="!px-2 !py-1 text-xs"
@@ -1945,26 +2203,32 @@ export function AdminDashboardPage() {
             <p className="mb-3 text-sm font-medium text-text-secondary">
               {t('dashboard.rooms.scheduleSection')}
             </p>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Field label={t('dashboard.rooms.scheduleDay')}>
-                <Select
-                  required
-                  value={roomForm.scheduleDay}
-                  onChange={(e) =>
-                    setRoomForm((f) => ({
-                      ...f,
-                      scheduleDay: e.target.value as RoomScheduleDay | '',
-                    }))
-                  }
-                >
-                  <option value="">{t('dashboard.rooms.scheduleSelectDay')}</option>
-                  {ROOM_SCHEDULE_DAY_VALUES.map((d) => (
-                    <option key={d} value={d}>
+            <Field label={t('dashboard.rooms.scheduleDaysLabel')}>
+              <div className="flex flex-wrap gap-2">
+                {ROOM_SCHEDULE_DAY_VALUES.map((d) => {
+                  const checked = roomForm.scheduleDays.includes(d);
+                  return (
+                    <label
+                      key={d}
+                      className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm ${
+                        checked
+                          ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
+                          : 'border-gray-300 bg-white text-text-secondary dark:border-gray-600 dark:bg-gray-900'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="rounded"
+                        checked={checked}
+                        onChange={() => toggleScheduleDay(d)}
+                      />
                       {t(`dashboard.rooms.scheduleDays.${d}`)}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
+                    </label>
+                  );
+                })}
+              </div>
+            </Field>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Field label={t('dashboard.rooms.scheduleFrom')}>
                 <Select
                   required
@@ -2010,6 +2274,35 @@ export function AdminDashboardPage() {
               </Field>
             </div>
           </div>
+          <Field label={t('dashboard.rooms.assignTeacher')}>
+            <Select
+              value={roomForm.reservedTeacherId}
+              onChange={(e) =>
+                setRoomForm((f) => ({ ...f, reservedTeacherId: e.target.value }))
+              }
+            >
+              <option value="__none__">{t('dashboard.rooms.noTeacherOption')}</option>
+              {(() => {
+                const currentId = roomForm.reservedTeacherId;
+                const opts = [...roomTeacherOptions];
+                if (
+                  currentId !== '__none__' &&
+                  currentId &&
+                  !opts.some((o) => o.id === currentId)
+                ) {
+                  opts.unshift({ id: currentId, label: currentId });
+                }
+                return opts.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ));
+              })()}
+            </Select>
+            <p className="mt-1 text-xs text-text-muted">
+              {t('dashboard.rooms.assignTeacherHint')}
+            </p>
+          </Field>
           <Field label={t('dashboard.rooms.participantIds')}>
             <Input
               value={roomForm.participants}
