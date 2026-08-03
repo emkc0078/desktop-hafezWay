@@ -13,7 +13,9 @@ import {
 import { RoomParticipantsCell, formatRoomOccupancy } from '@/components/RoomParticipantsCell';
 import { SignupOffersPanel } from '@/components/SignupOffersPanel';
 import { SignupPlansPanel } from '@/components/SignupPlansPanel';
+import { SiteAgreementPanel } from '@/components/SiteAgreementPanel';
 import { UserMonthlyAttendanceSection } from '@/components/UserMonthlyAttendanceSection';
+import { useAppVersion } from '@/hooks/useAppVersion';
 import {
   Btn,
   Card,
@@ -51,7 +53,8 @@ type Tab =
   | 'roomRatings'
   | 'notifications'
   | 'signupPlans'
-  | 'offers';
+  | 'offers'
+  | 'siteAgreement';
 
 const AUTH_PROVIDER_GOOGLE = 'google';
 const AUTH_PROVIDER_TWITTER = 'twitter';
@@ -372,6 +375,7 @@ function formatRoomScheduleCell(
 
 export function AdminDashboardPage() {
   const t = useT();
+  const appVersion = useAppVersion();
   const { serverUrl, liveAppUrl, adminToken, adminName, adminUserId } = useAdminSettings();
 
   const [tab, setTab] = useState<Tab>('rooms');
@@ -1330,9 +1334,16 @@ export function AdminDashboardPage() {
             isWideDashboardTab ? 'max-w-none' : 'max-w-7xl'
           }`}
         >
-          <h1 className="shrink-0 text-xl font-semibold text-text-primary dark:text-gray-100">
-            {t('dashboard.title')}
-          </h1>
+          <div className="shrink-0">
+            <h1 className="text-xl font-semibold text-text-primary dark:text-gray-100">
+              {t('dashboard.title')}
+            </h1>
+            {appVersion ? (
+              <p className="mt-0.5 text-xs text-text-muted dark:text-gray-400">
+                {t('nav.version', { version: appVersion })}
+              </p>
+            ) : null}
+          </div>
           <div className="min-w-0 w-full lg:max-w-5xl lg:flex-1">
             <AdminAuthBar />
           </div>
@@ -1350,6 +1361,7 @@ export function AdminDashboardPage() {
             ['notifications', t('dashboard.tabs.notifications')],
             ['signupPlans', t('dashboard.tabs.signupPlans')],
             ['offers', t('dashboard.tabs.offers')],
+            ['siteAgreement', t('dashboard.tabs.siteAgreement')],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -2145,6 +2157,7 @@ export function AdminDashboardPage() {
 
         {tab === 'signupPlans' && <SignupPlansPanel />}
         {tab === 'offers' && <SignupOffersPanel />}
+        {tab === 'siteAgreement' && <SiteAgreementPanel />}
       </main>
 
       {selectedSessionReport ? (

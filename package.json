@@ -1,25 +1,29 @@
 {
   "name": "desktop-hafezway-admin",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "cross-env NODE_ENV=development concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "bump": "node scripts/bump-version.cjs",
+    "icons": "node scripts/prepare-icons.cjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "electron": "cross-env NODE_ENV=production electron .",
-    "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win --x64",
-    "dist:mac": "npm run build && electron-builder --mac",
+    "dist": "npm run bump && npm run icons && npm run build && electron-builder",
+    "dist:win": "npm run bump && npm run icons && npm run build && electron-builder --win --x64",
+    "dist:mac": "npm run bump && npm run icons && npm run build && electron-builder --mac",
     "lint": "eslint ."
   },
   "build": {
     "appId": "com.hafezway.admin",
     "productName": "Hafez Way Admin",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
+    "icon": "build/icon.png",
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -29,15 +33,31 @@
       {
         "from": "scripts/hafezway-backup",
         "to": "scripts/hafezway-backup"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
       }
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis",
         "portable"
       ]
     },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Hafez Way Admin"
+    },
     "mac": {
+      "icon": "build/icon.icns",
       "target": [
         "dmg"
       ],
@@ -69,11 +89,14 @@
     "cross-env": "^10.1.0",
     "electron": "^39.2.7",
     "electron-builder": "^26.15.3",
+    "electron-builder-squirrel-windows": "^26.15.3",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
+    "png-to-ico": "^3.0.2",
     "postcss": "^8.5.3",
+    "sharp": "^0.35.3",
     "tailwindcss": "^3.4.17",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
