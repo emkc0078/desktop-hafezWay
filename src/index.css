@@ -85,16 +85,30 @@ html[dir='rtl'] .rtl-flip-row {
   background-color: rgb(6 78 59 / 0.45);
 }
 
-/* Users table — larger text and minimum width */
+/* Users table — full width, no horizontal scroll */
+.admin-users-table {
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
 .admin-users-table.admin-striped-table .admin-data-table {
-  min-width: 1650px;
-  font-size: 16px;
+  width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
+  font-size: 14px;
 }
-.admin-users-table .admin-data-table thead th {
-  font-size: 15px;
-}
+.admin-users-table .admin-data-table thead th,
 .admin-users-table .admin-data-table tbody td {
-  font-size: 16px;
+  font-size: 13px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  vertical-align: top;
+}
+.admin-users-table .admin-data-table tbody td button {
+  white-space: normal;
+  max-width: 100%;
+  line-height: 1.25;
 }
 
 /* Log modal JSON highlighting (from logs-viewer.html) */
