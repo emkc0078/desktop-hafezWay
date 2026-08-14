@@ -1,7 +1,7 @@
 {
   "name": "desktop-hafezway-admin",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -14,6 +14,9 @@
     "dist": "npm run bump && npm run icons && npm run build && electron-builder",
     "dist:win": "npm run bump && npm run icons && npm run build && electron-builder --win --x64",
     "dist:mac": "npm run bump && npm run icons && npm run build && electron-builder --mac",
+    "release": "npm run bump && npm run icons && npm run build && electron-builder --win --mac --x64 --publish always && node scripts/print-release-link.cjs",
+    "release:win": "npm run bump && npm run icons && npm run build && electron-builder --win --x64 --publish always && node scripts/print-release-link.cjs",
+    "release:mac": "npm run bump && npm run icons && npm run build && electron-builder --mac --publish always && node scripts/print-release-link.cjs",
     "lint": "eslint ."
   },
   "build": {
