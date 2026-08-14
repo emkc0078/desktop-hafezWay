@@ -19,5 +19,11 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Data-loading effects intentionally update local request state.
+      'react-hooks/set-state-in-effect': 'off',
+      // Context and UI modules intentionally export shared hooks/helpers.
+      'react-refresh/only-export-components': 'off',
+    },
   },
 ])
