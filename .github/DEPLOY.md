@@ -8,8 +8,8 @@
 2. Build Windows installers on `windows-latest`
 3. Publish a **GitHub Release** (`electron-builder --publish always`) with:
    - `Hafez Way Admin Setup x.y.z.exe` (installer)
-   - `Hafez Way Admin x.y.z.exe` (portable)
    - `latest.yml` (used by **electron-updater**)
+   - `.blockmap` (for differential updates)
 
 Uses the built-in `GITHUB_TOKEN` (`permissions: contents: write`). No personal `GH_TOKEN` secret is required for Actions.
 
@@ -19,7 +19,10 @@ Packaged installs already use `electron-updater`:
 - A banner asks the user to **Download update** (in-app) or **Open download page** (browser → latest release)
 - After download: **Install & restart**
 
-Manual download link (always latest):  
+Manual download link (Setup installer for a version):  
+`https://github.com/emkc0078/desktop-hafezWay/releases/download/vX.Y.Z/Hafez-Way-Admin-Setup-X.Y.Z.exe`
+
+Always-latest release page:  
 https://github.com/emkc0078/desktop-hafezWay/releases/latest
 
 ## Local publish (optional)

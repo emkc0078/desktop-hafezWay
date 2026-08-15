@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * Prints the public download URL after a successful GitHub publish.
+ * Main share link = Windows Setup installer asset.
  */
 const fs = require('fs');
 const path = require('path');
@@ -11,15 +12,18 @@ const owner = publish.owner || 'emkc0078';
 const repo = publish.repo || 'desktop-hafezWay';
 const version = pkg.version;
 const tag = `v${version}`;
+const setupFile = `Hafez-Way-Admin-Setup-${version}.exe`;
 
-const latest = `https://github.com/${owner}/${repo}/releases/latest`;
+const setupDownload = `https://github.com/${owner}/${repo}/releases/download/${tag}/${setupFile}`;
 const thisRelease = `https://github.com/${owner}/${repo}/releases/tag/${tag}`;
+const latestPage = `https://github.com/${owner}/${repo}/releases/latest`;
 
 console.log('');
 console.log('Release published.');
-console.log(`Version:       ${version}`);
-console.log(`This release:  ${thisRelease}`);
-console.log(`Always latest: ${latest}`);
+console.log(`Version:          ${version}`);
+console.log(`Setup download:   ${setupDownload}`);
+console.log(`Release page:     ${thisRelease}`);
+console.log(`Releases list:    ${latestPage}`);
 console.log('');
-console.log('Old installs will see this version via electron-updater.');
-console.log('Share the "Always latest" link for manual download.');
+console.log('Share the Setup download link with users.');
+console.log('Old installs also pick this up via electron-updater (latest.yml).');

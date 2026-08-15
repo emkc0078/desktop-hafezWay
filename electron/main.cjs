@@ -437,8 +437,13 @@ function setupAutoUpdater(win) {
     return { ok: true };
   });
 
-  ipcMain.handle('admin:open-latest-release-page', async () => {
-    const url = 'https://github.com/emkc0078/desktop-hafezWay/releases/latest';
+  ipcMain.handle('admin:open-latest-release-page', async (_event, version) => {
+    const owner = 'emkc0078';
+    const repo = 'desktop-hafezWay';
+    const ver = typeof version === 'string' && version.trim() ? version.trim().replace(/^v/i, '') : '';
+    const url = ver
+      ? `https://github.com/${owner}/${repo}/releases/download/v${ver}/Hafez-Way-Admin-Setup-${ver}.exe`
+      : `https://github.com/${owner}/${repo}/releases/latest`;
     await shell.openExternal(url);
     return { ok: true, url };
   });
