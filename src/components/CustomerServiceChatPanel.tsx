@@ -273,6 +273,8 @@ export function CustomerServiceChatPanel({
     [adminToken, adminUserId, apiBase, loadConversations],
   );
 
+  const selectedUnreadCount = Math.max(0, Number(selectedConversation?.unreadCount) || 0);
+
   const loadMessages = useCallback(async () => {
     if (!adminToken || !selectedId || !active) return;
     setMessagesLoading((current) => current || messages.length === 0);
@@ -296,11 +298,7 @@ export function CustomerServiceChatPanel({
       } else {
         notifyIncomingMessages(incomingIds);
       }
-      await markIncomingRead(
-        selectedId,
-        next,
-        Math.max(0, Number(selectedConversation?.unreadCount) || 0),
-      );
+      await markIncomingRead(selectedId, next, selectedUnreadCount);
     } catch (error) {
       setMessagesError(error instanceof Error ? error.message : t('common.error'));
     } finally {
@@ -315,8 +313,8 @@ export function CustomerServiceChatPanel({
     messages.length,
     notifyIncomingMessages,
     seedIncomingMessages,
-    selectedConversation?.unreadCount,
     selectedId,
+    selectedUnreadCount,
     t,
   ]);
 
