@@ -10,11 +10,14 @@ import {
   StudentReportDetailModal,
   type SessionStudentReportRow,
 } from '@/components/StudentReportDetailModal';
-import { RoomParticipantsCell, formatRoomOccupancy } from '@/components/RoomParticipantsCell';
+import { RoomParticipantsCell, formatRoomOccupancy, roomParticipantsFromRecord } from '@/components/RoomParticipantsCell';
+import { CustomerServiceChatPanel } from '@/components/CustomerServiceChatPanel';
 import { SignupOffersPanel } from '@/components/SignupOffersPanel';
 import { SignupPlansPanel } from '@/components/SignupPlansPanel';
+import { SiteAgreementPanel } from '@/components/SiteAgreementPanel';
 import { UserMonthlyAttendanceSection } from '@/components/UserMonthlyAttendanceSection';
-import { CustomerServiceChatPanel } from '@/components/CustomerServiceChatPanel';
+import { UserTeacherRatingsSection } from '@/components/UserTeacherRatingsSection';
+import { useAppVersion } from '@/hooks/useAppVersion';
 import {
   Btn,
   Card,
@@ -45,6 +48,13 @@ import {
   SIGNUP_QUIZ_WEEKLY,
   SignupUserType,
 } from '@/constants/signupQuizOptions';
+import {
+  TEACHER_DEGREE_OPTIONS,
+  TEACHER_LANGUAGE_OPTIONS,
+  TEACHER_NARRATION_OPTIONS,
+  TEACHER_QIRAAT_OPTIONS,
+  TEACHER_SCIENCE_OPTIONS,
+} from '@/constants/signupTeacherOptions';
 
 type Tab =
   | 'rooms'
@@ -55,6 +65,7 @@ type Tab =
   | 'notifications'
   | 'signupPlans'
   | 'offers'
+  | 'siteAgreement'
   | 'customerService';
 
 const AUTH_PROVIDER_GOOGLE = 'google';
@@ -161,7 +172,20 @@ type AdminSignupDraft = {
   weekly: string;
   surah: string;
   signupPlan: string;
+  otherLanguages: string;
+  academicDegree: string;
+  primaryIjazat: string;
+  approvedRiwayat: string[];
+  proficientQiraat: string[];
+  ijazatObtained: string[];
+  teachingSciences: string[];
+  authorizedBooks: string;
 };
+
+function stringArrayFromUnknown(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((v) => String(v)).filter((v) => v.trim() !== '');
+}
 
 function signupDraftFromUserDetail(detail: Record<string, unknown>): AdminSignupDraft {
   const nestedVal = detail.signupProfile;
@@ -173,6 +197,10 @@ function signupDraftFromUserDetail(detail: Record<string, unknown>): AdminSignup
     const v = nested[key] !== undefined ? nested[key] : detail[key];
     if (v === undefined || v === null) return '';
     return String(v);
+  };
+  const getArr = (key: string) => {
+    const v = nested[key] !== undefined ? nested[key] : detail[key];
+    return stringArrayFromUnknown(v);
   };
   let userType: AdminSignupDraft['userType'] = '';
   const utRaw = nested.userType !== undefined ? nested.userType : detail.userType;
@@ -206,6 +234,14 @@ function signupDraftFromUserDetail(detail: Record<string, unknown>): AdminSignup
     weekly: get('weekly'),
     surah: get('surah'),
     signupPlan: get('signupPlan'),
+    otherLanguages: get('otherLanguages'),
+    academicDegree: get('academicDegree'),
+    primaryIjazat: get('primaryIjazat'),
+    approvedRiwayat: getArr('approvedRiwayat'),
+    proficientQiraat: getArr('proficientQiraat'),
+    ijazatObtained: getArr('ijazatObtained'),
+    teachingSciences: getArr('teachingSciences'),
+    authorizedBooks: get('authorizedBooks'),
   };
 }
 
@@ -215,6 +251,139 @@ function signupQuizOptionLabel(val: string, t: (key: string) => string): string 
   const path = `dashboard.users.signupQuizVals.${val}`;
   const lbl = t(path);
   return lbl === path ? val : lbl;
+}
+
+/** Label for teacher signup enum key. */
+function signupTeacherOptionLabel(val: string, t: (key: string) => string): string {
+  if (!val) return '';
+  const path = `dashboard.users.signupTeacherVals.${val}`;
+  const lbl = t(path);
+  return lbl === path ? val : lbl;
+}
+
+function teacherSelectOptions(
+  allowed: readonly string[],
+  current: string,
+  t: (key: string) => string,
+): { value: string; label: string }[] {
+  const unset = t('dashboard.users.signupUserTypeUnset');
+  const customNote = t('dashboard.users.signupCustomStored');
+  const opts: { value: string; label: string }[] = [{ value: '', label: unset }];
+  if (current && !allowed.includes(current)) {
+    const pretty = signupTeacherOptionLabel(current, t);
+    opts.push({
+      value: current,
+      label: pretty === current ? `${current} (${customNote})` : pretty,
+    });
+  }
+  for (const v of allowed) {
+    opts.push({ value: v, label: signupTeacherOptionLabel(v, t) });
+  }
+  return opts;
+}
+
+function CheckboxMultiSelect({
+  options,
+  values,
+  onChange,
+}: {
+  options: { value: string; label: string }[];
+  values: string[];
+  onChange: (next: string[]) => void;
+}) {
+  return (
+    <div className="max-h-44 space-y-1.5 overflow-y-auto rounded-md border border-gray-200 p-2 dark:border-gray-700">
+      {options.map((o) => {
+        const checked = values.includes(o.value);
+        return (
+          <label
+            key={o.value}
+            className="flex cursor-pointer items-start gap-2 text-sm text-text-primary"
+          >
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={checked}
+              onChange={() => {
+                onChange(
+                  checked ? values.filter((v) => v !== o.value) : [...values, o.value],
+                );
+              }}
+            />
+            <span>{o.label}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function UserDetailReadonlyRow({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | null;
+}) {
+  const display = value != null && String(value).trim() !== '' ? String(value) : '—';
+  return (
+    <div>
+      <p className="text-xs font-medium text-text-muted">{label}</p>
+      <p className="mt-0.5 whitespace-pre-wrap text-sm text-text-primary">{display}</p>
+    </div>
+  );
+}
+
+function formatJoinedLabels(
+  values: string[],
+  labelFor: (v: string) => string,
+): string {
+  if (!values.length) return '';
+  return values.map((v) => labelFor(v)).join(', ');
+}
+
+/** Names when recipients are listed and ≤10; otherwise count / “all”. */
+function formatNotificationHistoryRecipients(
+  row: Record<string, unknown>,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
+  const total = Number(row.totalRecipients ?? 0);
+  const recipientType = String(row.recipientType ?? '');
+  const raw = row.recipientIds;
+  const names: string[] = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (item && typeof item === 'object') {
+        const u = item as Record<string, unknown>;
+        const name = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim();
+        if (name) {
+          names.push(name);
+          continue;
+        }
+        if (typeof u.email === 'string' && u.email.trim() !== '') {
+          names.push(u.email.trim());
+          continue;
+        }
+        const id = u._id ?? u.id;
+        if (id != null) names.push(String(id).slice(-6));
+      } else if (item != null && String(item).trim() !== '') {
+        names.push(String(item).slice(-6));
+      }
+    }
+  }
+
+  const specified = recipientType === 'single' || recipientType === 'multiple';
+  // Show names when listed recipients exist and count ≤ 10 (specified list, or small batch).
+  if (names.length > 0 && names.length <= 10 && (specified || total <= 10 || names.length < 10)) {
+    return names.join(', ');
+  }
+
+  if (recipientType === 'all') {
+    return t('dashboard.notifications.recipientsAll', { count: total || '—' });
+  }
+  if (total > 0) return String(total);
+  if (names.length > 0) return String(names.length);
+  return '—';
 }
 
 /** `datetime-local` value from ISO string (local timezone). */
@@ -334,6 +503,47 @@ function entityId(value: unknown): string {
   return '';
 }
 
+type RoomNotifyMember = {
+  id: string;
+  name: string;
+  email?: string;
+  role: 'student' | 'teacher';
+};
+
+/** Students + reserved teacher for room push notifications. */
+function roomMembersForNotify(room: Record<string, unknown>): RoomNotifyMember[] {
+  const students = roomParticipantsFromRecord(room).map((p) => ({
+    id: p.id,
+    name: p.name,
+    email: p.email,
+    role: 'student' as const,
+  }));
+  const members: RoomNotifyMember[] = [...students];
+  const teacher = room.reservedTeacher;
+  const tid = entityId(teacher);
+  if (tid && !members.some((m) => m.id === tid)) {
+    let name = tid;
+    let email: string | undefined;
+    if (teacher && typeof teacher === 'object') {
+      const o = teacher as Record<string, unknown>;
+      const first = String(o.firstName ?? '').trim();
+      const last = String(o.lastName ?? '').trim();
+      const mail = typeof o.email === 'string' ? o.email.trim() : '';
+      name = `${first} ${last}`.trim() || mail || tid;
+      email = mail || undefined;
+    }
+    members.push({ id: tid, name, email, role: 'teacher' });
+  }
+  return members;
+}
+
+function roomDisplayName(room: Record<string, unknown>): string {
+  const en = String(room.nameEn ?? '').trim();
+  const ar = String(room.nameAr ?? '').trim();
+  if (en && ar && en !== ar) return `${en} / ${ar}`;
+  return en || ar || entityId(room._id) || entityId(room.id) || '—';
+}
+
 function scheduleFromRoomRecord(room: Record<string, unknown>): {
   scheduleDays: RoomScheduleDay[];
   scheduleTimeFrom: string;
@@ -376,6 +586,7 @@ function formatRoomScheduleCell(
 
 export function AdminDashboardPage() {
   const t = useT();
+  const appVersion = useAppVersion();
   const { serverUrl, liveAppUrl, adminToken, adminName, adminUserId } = useAdminSettings();
 
   const [tab, setTab] = useState<Tab>('rooms');
@@ -910,6 +1121,7 @@ export function AdminDashboardPage() {
 
   const [userModal, setUserModal] = useState<{ id: string } | null>(null);
   const [userDetail, setUserDetail] = useState<Record<string, unknown> | null>(null);
+  const [userDetailTab, setUserDetailTab] = useState<'view' | 'edit'>('view');
   const [signupEdit, setSignupEdit] = useState<AdminSignupDraft | null>(null);
   const [signupSaving, setSignupSaving] = useState(false);
   const [subEdit, setSubEdit] = useState<AdminSubscriptionDraft | null>(null);
@@ -922,6 +1134,7 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     setUserModal({ id: userId });
     setUserDetail(null);
+    setUserDetailTab('view');
     setUserModalRooms([]);
     try {
       const [detailData, roomsRes] = await Promise.all([
@@ -963,12 +1176,14 @@ export function AdminDashboardPage() {
   }, [userDetail]);
 
   const saveSignupOptions = async () => {
-    if (!adminToken || !userModal || !signupEdit) return;
+    if (!adminToken || !userModal || !signupEdit || !userDetail) return;
     const trimOrNull = (s: string) => {
       const v = s.trim();
       return v === '' ? null : v;
     };
+    const arrOrNull = (arr: string[]) => (arr.length === 0 ? null : arr);
     const dobRaw = signupEdit.dateOfBirth.trim();
+    const isTeacher = String(userDetail.role ?? '') === 'teacher';
     const body: Record<string, unknown> = {
       userType: signupEdit.userType === '' ? null : signupEdit.userType,
       languageTag: trimOrNull(signupEdit.languageTag),
@@ -977,13 +1192,24 @@ export function AdminDashboardPage() {
       countryResidence: trimOrNull(signupEdit.countryResidence),
       motherTongue: trimOrNull(signupEdit.motherTongue),
       dateOfBirth: dobRaw === '' ? null : dobRaw,
-      memorizedQuran: trimOrNull(signupEdit.memorizedQuran),
-      amount: trimOrNull(signupEdit.amount),
-      program: trimOrNull(signupEdit.program),
-      weekly: trimOrNull(signupEdit.weekly),
-      surah: trimOrNull(signupEdit.surah),
-      signupPlan: trimOrNull(signupEdit.signupPlan),
     };
+    if (isTeacher) {
+      body.otherLanguages = trimOrNull(signupEdit.otherLanguages);
+      body.academicDegree = trimOrNull(signupEdit.academicDegree);
+      body.primaryIjazat = trimOrNull(signupEdit.primaryIjazat);
+      body.approvedRiwayat = arrOrNull(signupEdit.approvedRiwayat);
+      body.proficientQiraat = arrOrNull(signupEdit.proficientQiraat);
+      body.ijazatObtained = arrOrNull(signupEdit.ijazatObtained);
+      body.teachingSciences = arrOrNull(signupEdit.teachingSciences);
+      body.authorizedBooks = trimOrNull(signupEdit.authorizedBooks);
+    } else {
+      body.signupPlan = trimOrNull(signupEdit.signupPlan);
+      body.memorizedQuran = trimOrNull(signupEdit.memorizedQuran);
+      body.amount = trimOrNull(signupEdit.amount);
+      body.program = trimOrNull(signupEdit.program);
+      body.weekly = trimOrNull(signupEdit.weekly);
+      body.surah = trimOrNull(signupEdit.surah);
+    }
     const baseUrl = serverUrl.replace(/\/$/, '');
     setSignupSaving(true);
     try {
@@ -998,6 +1224,7 @@ export function AdminDashboardPage() {
         setUserDetail((prev) => (prev ? { ...prev, signupProfile: fresh } : prev));
       }
       showMessage(t('dashboard.users.signupSaved'), 'success');
+      setUserDetailTab('view');
     } catch (e) {
       showMessage(
         t('dashboard.users.signupSaveError', { message: (e as Error).message }),
@@ -1034,6 +1261,7 @@ export function AdminDashboardPage() {
         setUserDetail((prev) => (prev ? { ...prev, subscription: fresh } : prev));
       }
       showMessage(t('dashboard.users.subscriptionSaved'), 'success');
+      setUserDetailTab('view');
     } catch (e) {
       showMessage(
         t('dashboard.users.subscriptionSaveError', { message: (e as Error).message }),
@@ -1126,6 +1354,7 @@ export function AdminDashboardPage() {
 
   const [sendModal, setSendModal] = useState(false);
   const [sendAllModal, setSendAllModal] = useState(false);
+  const [sendRoomModal, setSendRoomModal] = useState(false);
   const [notifRecipientQuery, setNotifRecipientQuery] = useState('');
   const [notifForm, setNotifForm] = useState({
     userId: '',
@@ -1135,6 +1364,14 @@ export function AdminDashboardPage() {
     sendToMultiple: false,
   });
   const [sendAllForm, setSendAllForm] = useState({ title: '', body: '', type: 'general' });
+  const [roomNotifForm, setRoomNotifForm] = useState({ title: '', body: '', type: 'general' });
+  const [notifRoomOptions, setNotifRoomOptions] = useState<Record<string, unknown>[]>([]);
+  const [notifRoomsLoading, setNotifRoomsLoading] = useState(false);
+  const [notifRoomSearch, setNotifRoomSearch] = useState('');
+  const [selectedNotifRoomId, setSelectedNotifRoomId] = useState('');
+  const [roomNotifyMembers, setRoomNotifyMembers] = useState<RoomNotifyMember[]>([]);
+  const [roomMembersLoading, setRoomMembersLoading] = useState(false);
+  const [sendingRoomNotif, setSendingRoomNotif] = useState(false);
 
   const [recipientPickerUsers, setRecipientPickerUsers] = useState<NotifyPickerUser[]>([]);
   const [recipientPickerLoading, setRecipientPickerLoading] = useState(false);
@@ -1175,14 +1412,16 @@ export function AdminDashboardPage() {
     setSelectedRecipientIds([]);
   }, []);
 
-  const openSendToUserModal = useCallback((presetUserId?: string) => {
+  const openSendToUserModal = useCallback((presetUserId?: string, searchHint?: string) => {
     setNotifForm((f) => ({
       ...f,
       sendToMultiple: false,
       userId: '',
     }));
-    setSelectedRecipientIds(presetUserId !== undefined ? [presetUserId] : []);
-    setNotifRecipientQuery('');
+    setSelectedRecipientIds(presetUserId !== undefined && presetUserId !== '' ? [presetUserId] : []);
+    setNotifRecipientQuery(
+      (searchHint ?? '').trim() || (presetUserId !== undefined ? presetUserId : ''),
+    );
     setSendModal(true);
   }, []);
 
@@ -1290,6 +1529,199 @@ export function AdminDashboardPage() {
     }
   };
 
+  const loadNotifRooms = useCallback(async () => {
+    if (!adminToken) return;
+    setNotifRoomsLoading(true);
+    try {
+      const data = await adminFetchJson<{
+        data?: { rooms?: Record<string, unknown>[] };
+      }>(`${serverUrl}/rooms?page=1&limit=300&status=active`, adminToken);
+      const rooms = data.data?.rooms;
+      setNotifRoomOptions(Array.isArray(rooms) ? rooms : []);
+    } catch (e) {
+      showMessage(t('dashboard.notifications.loadRoomsError', { message: (e as Error).message }), 'error');
+      setNotifRoomOptions([]);
+    } finally {
+      setNotifRoomsLoading(false);
+    }
+  }, [adminToken, serverUrl, showMessage, t]);
+
+  const closeSendRoomModal = useCallback(() => {
+    setSendRoomModal(false);
+    setNotifRoomSearch('');
+    setSelectedNotifRoomId('');
+    setRoomNotifyMembers([]);
+    setRoomNotifForm({ title: '', body: '', type: 'general' });
+  }, []);
+
+  const openSendRoomModal = useCallback(() => {
+    setNotifRoomSearch('');
+    setSelectedNotifRoomId('');
+    setRoomNotifyMembers([]);
+    setRoomNotifForm({ title: '', body: '', type: 'general' });
+    setSendRoomModal(true);
+    void loadUsersWithTokens();
+  }, [loadUsersWithTokens]);
+
+  const selectNotifRoom = useCallback(
+    async (roomId: string) => {
+      setSelectedNotifRoomId(roomId);
+      setRoomNotifyMembers([]);
+      if (!roomId || !adminToken) return;
+      setRoomMembersLoading(true);
+      try {
+        const data = await adminFetchJson<{ data: Record<string, unknown> }>(
+          `${serverUrl}/rooms/${roomId}`,
+          adminToken,
+        );
+        setRoomNotifyMembers(roomMembersForNotify(data.data ?? {}));
+      } catch (e) {
+        showMessage(
+          t('dashboard.notifications.loadRoomMembersError', { message: (e as Error).message }),
+          'error',
+        );
+        setRoomNotifyMembers([]);
+      } finally {
+        setRoomMembersLoading(false);
+      }
+    },
+    [adminToken, serverUrl, showMessage, t],
+  );
+
+  useEffect(() => {
+    if (sendRoomModal && adminToken) void loadNotifRooms();
+  }, [sendRoomModal, adminToken, loadNotifRooms]);
+
+  const filteredNotifRooms = useMemo(() => {
+    const q = notifRoomSearch.trim().toLowerCase();
+    if (!q) return notifRoomOptions;
+    return notifRoomOptions.filter((room) => {
+      const id = entityId(room._id) || entityId(room.id);
+      const label = roomDisplayName(room).toLowerCase();
+      return label.includes(q) || id.toLowerCase().includes(q);
+    });
+  }, [notifRoomOptions, notifRoomSearch]);
+
+  const submitSendToRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminToken) return;
+    const { title, body, type } = roomNotifForm;
+    if (!title.trim() || !body.trim()) {
+      showMessage(t('dashboard.notifications.titleBodyRequired'), 'error');
+      return;
+    }
+    if (!selectedNotifRoomId) {
+      showMessage(t('dashboard.notifications.selectRoom'), 'error');
+      return;
+    }
+    const userIds = [...new Set(roomNotifyMembers.map((m) => m.id).filter(Boolean))];
+    if (!userIds.length) {
+      showMessage(t('dashboard.notifications.noRoomMembers'), 'error');
+      return;
+    }
+    const withPush = userIds.filter((id) => pushTokenUserIds.has(id));
+    const withoutPush = userIds.length - withPush.length;
+    // Inbox always queues for offline users; do not block when no Expo tokens.
+    const roomLabel =
+      roomDisplayName(
+        notifRoomOptions.find(
+          (r) => entityId(r._id) === selectedNotifRoomId || entityId(r.id) === selectedNotifRoomId,
+        ) ?? {},
+      ) || selectedNotifRoomId;
+    if (
+      !confirm(
+        t('dashboard.notifications.sendRoomConfirm', {
+          room: roomLabel,
+          count: userIds.length,
+          withPush: withPush.length,
+          withoutPush,
+          title,
+          body,
+        }),
+      )
+    ) {
+      return;
+    }
+    setSendingRoomNotif(true);
+    try {
+      const response = await adminFetchJson<{
+        success?: boolean;
+        successCount?: number;
+        failureCount?: number;
+        deliveredLiveCount?: number;
+        queuedCount?: number;
+        message?: string;
+        results?: Array<{ userId?: string; success?: boolean; queued?: boolean; deliveredLive?: boolean }>;
+      }>(
+        userIds.length === 1
+          ? `${serverUrl}/api/notifications/send`
+          : `${serverUrl}/api/notifications/send-multiple`,
+        adminToken,
+        {
+          method: 'POST',
+          body: JSON.stringify(
+            userIds.length === 1
+              ? { userId: userIds[0], title, body, type }
+              : { userIds, title, body, type },
+          ),
+        },
+      );
+
+      const ok =
+        typeof response.successCount === 'number'
+          ? response.successCount
+          : Array.isArray(response.results)
+            ? response.results.filter((r) => r.success).length
+            : response.success === false
+              ? 0
+              : userIds.length;
+      const failed =
+        typeof response.failureCount === 'number'
+          ? response.failureCount
+          : Math.max(0, userIds.length - ok);
+      const queued =
+        typeof response.queuedCount === 'number'
+          ? response.queuedCount
+          : Array.isArray(response.results)
+            ? response.results.filter((r) => r.queued).length
+            : 0;
+      const live =
+        typeof response.deliveredLiveCount === 'number'
+          ? response.deliveredLiveCount
+          : Array.isArray(response.results)
+            ? response.results.filter((r) => r.deliveredLive).length
+            : 0;
+
+      if (failed > 0 && ok === 0) {
+        showMessage(
+          t('dashboard.notifications.sentRoomAllFailed', {
+            count: userIds.length,
+            room: roomLabel,
+          }),
+          'error',
+        );
+      } else {
+        showMessage(
+          t('dashboard.notifications.sentRoomHybrid', {
+            room: roomLabel,
+            success: ok,
+            live,
+            queued,
+            failed,
+          }),
+          failed > 0 ? 'info' : 'success',
+        );
+      }
+      closeSendRoomModal();
+      void loadUsersWithTokens();
+      void loadNotificationHistory();
+    } catch (err) {
+      showMessage(t('dashboard.notifications.sendError', { message: (err as Error).message }), 'error');
+    } finally {
+      setSendingRoomNotif(false);
+    }
+  };
+
   const renderPagination = (pagination: Pagination | undefined, type: keyof typeof pages) => {
     if (!pagination) return null;
     const change = (p: number) => {
@@ -1349,9 +1781,16 @@ export function AdminDashboardPage() {
             isWideDashboardTab ? 'max-w-none' : 'max-w-7xl'
           }`}
         >
-          <h1 className="shrink-0 text-xl font-semibold text-text-primary dark:text-gray-100">
-            {t('dashboard.title')}
-          </h1>
+          <div className="shrink-0">
+            <h1 className="text-xl font-semibold text-text-primary dark:text-gray-100">
+              {t('dashboard.title')}
+            </h1>
+            {appVersion ? (
+              <p className="mt-0.5 text-xs text-text-muted dark:text-gray-400">
+                {t('nav.version', { version: appVersion })}
+              </p>
+            ) : null}
+          </div>
           <div className="min-w-0 w-full lg:max-w-5xl lg:flex-1">
             <AdminAuthBar />
           </div>
@@ -1369,6 +1808,7 @@ export function AdminDashboardPage() {
             ['notifications', t('dashboard.tabs.notifications')],
             ['signupPlans', t('dashboard.tabs.signupPlans')],
             ['offers', t('dashboard.tabs.offers')],
+            ['siteAgreement', t('dashboard.tabs.siteAgreement')],
             ['customerService', t('dashboard.tabs.customerService')],
           ] as const
         ).map(([id, label]) => (
@@ -1399,7 +1839,7 @@ export function AdminDashboardPage() {
       </nav>
 
       <main
-        className={`mx-auto w-full space-y-6 p-4 sm:p-6 ${isWideDashboardTab ? 'max-w-none' : 'max-w-7xl'}`}
+        className={`mx-auto w-full space-y-6 overflow-x-hidden p-4 sm:p-6 ${isWideDashboardTab ? '' : 'max-w-7xl'}`}
       >
         {tab === 'rooms' && (
           <Card>
@@ -1501,7 +1941,7 @@ export function AdminDashboardPage() {
                         <td className={tableCellClass}>
                           {t('dashboard.rooms.persons', { count: Number(room.type) })}
                         </td>
-                        <td className={tableCellClass}>
+                        <td className={`${tableCellClass} break-words`}>
                           {(ROOM_TARGET_AUDIENCE_VALUES as readonly string[]).includes(
                             String(room.targetAudience ?? '').toLowerCase(),
                           )
@@ -1632,7 +2072,7 @@ export function AdminDashboardPage() {
         )}
 
         {tab === 'users' && (
-          <Card>
+          <Card className="max-w-full overflow-x-hidden">
             <h2 className="mb-4 text-lg font-semibold">{t('dashboard.users.title')}</h2>
             <div className="mb-4 flex flex-wrap gap-3">
               <Input
@@ -1673,19 +2113,18 @@ export function AdminDashboardPage() {
             ) : (
               <>
                 <TableShell
-                  className="admin-striped-table admin-users-table w-full"
-                  minWidth={1880}
+                  className="admin-striped-table admin-users-table w-full max-w-full"
                   colWidths={[
-                    '150px',
-                    '110px',
-                    '220px',
-                    '90px',
-                    '130px',
-                    '100px',
-                    '110px',
-                    '90px',
-                    '90px',
-                    '380px',
+                    '11%',
+                    '8%',
+                    '15%',
+                    '6%',
+                    '9%',
+                    '8%',
+                    '8%',
+                    '6%',
+                    '6%',
+                    '23%',
                   ]}
                 >
                   <thead>
@@ -1715,10 +2154,10 @@ export function AdminDashboardPage() {
                         className="cursor-pointer"
                         onClick={() => void openUser(String(user.id))}
                       >
-                        <td className={`${tableCellClass} text-base`}>
+                        <td className={`${tableCellClass} break-words text-base`}>
                           {escapeHtml(user.firstName)} {escapeHtml(user.lastName)}
                         </td>
-                        <td className={`${tableCellClass} text-base whitespace-nowrap`}>
+                        <td className={`${tableCellClass} break-words text-base`}>
                           {user.userType === SignupUserType.MALE
                             ? t('dashboard.users.signupUserTypeMale')
                             : user.userType === SignupUserType.FEMALE
@@ -1727,9 +2166,9 @@ export function AdminDashboardPage() {
                                 ? t('dashboard.users.signupUserTypeChildren')
                                 : t('dashboard.users.signupUserTypeUnset')}
                         </td>
-                        <td className={`${tableCellClass} text-base break-all`}>{escapeHtml(user.email)}</td>
-                        <td className={`${tableCellClass} text-base`}>{escapeHtml(user.role)}</td>
-                        <td className={`${tableCellClass} text-base`}>
+                        <td className={`${tableCellClass} break-all text-base`}>{escapeHtml(user.email)}</td>
+                        <td className={`${tableCellClass} break-words text-base`}>{escapeHtml(user.role)}</td>
+                        <td className={`${tableCellClass} break-words text-base`}>
                           {(() => {
                             const role = String(user.role ?? '').toLowerCase();
                             if (role === 'teacher' || role === 'admin') {
@@ -1756,20 +2195,32 @@ export function AdminDashboardPage() {
                             t={t}
                           />
                         </td>
-                        <td className={`${tableCellClass} text-base`}>
+                        <td className={`${tableCellClass} break-words text-base`}>
                           {user.active !== false ? t('dashboard.users.active') : t('dashboard.users.inactive')}
                         </td>
-                        <td className={`${tableCellClass} text-base`}>
+                        <td className={`${tableCellClass} break-words text-base`}>
                           {user.isFrozen ? t('dashboard.users.frozen') : t('dashboard.users.notFrozen')}
                         </td>
-                        <td className={tableCellClass} onClick={(e) => e.stopPropagation()}>
-                          <div className="flex flex-nowrap gap-2">
+                        <td className={`${tableCellClass} max-w-0`} onClick={(e) => e.stopPropagation()}>
+                          <div className="flex max-w-full flex-wrap gap-1.5">
+                          <Btn
+                            variant="info"
+                            className="!px-2 !py-1 text-xs"
+                            onClick={() => {
+                              const uid = String(user.id);
+                              const email =
+                                typeof user.email === 'string' ? user.email.trim() : '';
+                              openSendToUserModal(uid, email || uid);
+                            }}
+                          >
+                            {t('dashboard.users.sendNotification')}
+                          </Btn>
                           {user.role !== 'admin' && (
                             <>
                               {user.active !== false ? (
                                 <Btn
                                   variant="warning"
-                                  className="!px-2.5 !py-1.5 text-sm"
+                                  className="!px-2 !py-1 text-xs"
                                   onClick={() => {
                                     if (confirm(t('dashboard.users.confirmDeactivate')))
                                       void userAction(`/deactivate/${user.id}`, 'PATCH');
@@ -1780,7 +2231,7 @@ export function AdminDashboardPage() {
                               ) : (
                                 <Btn
                                   variant="success"
-                                  className="!px-2.5 !py-1.5 text-sm"
+                                  className="!px-2 !py-1 text-xs"
                                   onClick={() => void userAction(`/activate/${user.id}`, 'PATCH')}
                                 >
                                   {t('dashboard.users.activate')}
@@ -1791,7 +2242,7 @@ export function AdminDashboardPage() {
                           {adminUserId && String(user.id) === adminUserId ? null : !user.isFrozen ? (
                             <Btn
                               variant="warning"
-                              className="!px-2.5 !py-1.5 text-sm"
+                              className="!px-2 !py-1 text-xs"
                               onClick={() => {
                                 if (confirm(t('dashboard.users.confirmFreeze')))
                                   void userAction(`/freeze-account/${user.id}`, 'DELETE');
@@ -1802,7 +2253,7 @@ export function AdminDashboardPage() {
                           ) : (
                             <Btn
                               variant="success"
-                              className="!px-2.5 !py-1.5 text-sm"
+                              className="!px-2 !py-1 text-xs"
                               onClick={() => void userAction(`/unfreeze-account/${user.id}`, 'PATCH')}
                             >
                               {t('dashboard.users.unfreeze')}
@@ -1811,7 +2262,7 @@ export function AdminDashboardPage() {
                           {user.role !== 'admin' && (
                             <Btn
                               variant="danger"
-                              className="!px-2.5 !py-1.5 text-sm"
+                              className="!px-2 !py-1 text-xs"
                               onClick={() => {
                                 if (confirm(t('dashboard.users.confirmDelete')))
                                   void userAction(`/delete-account/${user.id}`, 'DELETE');
@@ -2107,10 +2558,13 @@ export function AdminDashboardPage() {
                   <Btn variant="success" onClick={() => openSendToUserModal()}>
                     {t('dashboard.notifications.sendToUser')}
                   </Btn>
+                  <Btn variant="info" onClick={() => openSendRoomModal()}>
+                    {t('dashboard.notifications.sendToRoom')}
+                  </Btn>
                   <Btn variant="warning" onClick={() => setSendAllModal(true)}>
                     {t('dashboard.notifications.sendToAll')}
                   </Btn>
-                  <Btn variant="info" onClick={() => void loadUsersWithTokens()} disabled={notifLoading}>
+                  <Btn variant="secondary" onClick={() => void loadUsersWithTokens()} disabled={notifLoading}>
                     {t('dashboard.notifications.refreshUsers')}
                   </Btn>
                 </div>
@@ -2176,7 +2630,7 @@ export function AdminDashboardPage() {
               {!notifHistory.length ? (
                 <p className="text-text-muted">{t('dashboard.notifications.noHistory')}</p>
               ) : (
-                <TableShell colWidths={['14%', '28%', '10%', '10%', '8%', '8%', '22%']}>
+                <TableShell colWidths={['12%', '22%', '8%', '24%', '7%', '7%', '20%']}>
                   <thead>
                     <tr>
                       {[
@@ -2202,7 +2656,12 @@ export function AdminDashboardPage() {
                           <td className="px-3 py-2 font-medium">{escapeHtml(String(row.title ?? ''))}</td>
                           <td className="max-w-xs truncate px-3 py-2">{escapeHtml(String(row.body ?? ''))}</td>
                           <td className="px-3 py-2">{escapeHtml(String(row.type ?? ''))}</td>
-                          <td className="px-3 py-2">{String(row.totalRecipients ?? '')}</td>
+                          <td
+                            className="whitespace-pre-wrap break-words px-3 py-2 text-sm"
+                            title={formatNotificationHistoryRecipients(row, t)}
+                          >
+                            {escapeHtml(formatNotificationHistoryRecipients(row, t))}
+                          </td>
                           <td className="px-3 py-2 text-emerald-600">{String(row.successCount ?? '')}</td>
                           <td className="px-3 py-2 text-red-600">{String(row.failureCount ?? '')}</td>
                           <td className="px-3 py-2 text-xs">
@@ -2220,6 +2679,7 @@ export function AdminDashboardPage() {
 
         {tab === 'signupPlans' && <SignupPlansPanel />}
         {tab === 'offers' && <SignupOffersPanel />}
+        {tab === 'siteAgreement' && <SiteAgreementPanel />}
         <div className={tab === 'customerService' ? 'block' : 'hidden'}>
           <CustomerServiceChatPanel
             serverUrl={serverUrl}
@@ -2465,7 +2925,7 @@ export function AdminDashboardPage() {
                 <strong>{t('dashboard.users.created')}:</strong>{' '}
                 {userDetail.createdAt ? new Date(String(userDetail.createdAt)).toLocaleString() : ''}
               </p>
-              {String(userDetail.role ?? '').toLowerCase() === 'student'
+              {String(userDetail.role ?? '') !== 'teacher'
                 ? (() => {
                     const subRaw = userDetail.subscription;
                     if (!subRaw || typeof subRaw !== 'object') return null;
@@ -2486,19 +2946,276 @@ export function AdminDashboardPage() {
                 : null}
             </div>
 
-            {userModal && String(userDetail.role ?? '') === 'student' && adminToken ? (
-              <UserMonthlyAttendanceSection
-                studentId={userModal.id}
-                serverUrl={serverUrl}
-                adminToken={adminToken}
-              />
-            ) : userDetail.role && String(userDetail.role) !== 'student' ? (
-              <p className="border-t border-gray-200 pt-4 text-xs text-text-muted dark:border-gray-700">
-                {t('dashboard.users.attendanceStudentsOnly')}
-              </p>
-            ) : null}
+            <div className="flex gap-2 border-b border-gray-200 pb-3 dark:border-gray-700">
+              {(
+                [
+                  ['view', t('dashboard.users.detailTabView')],
+                  ['edit', t('dashboard.users.detailTabEdit')],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    if (id === 'view' && userDetail) {
+                      setSignupEdit(signupDraftFromUserDetail(userDetail));
+                      setSubEdit(subscriptionDraftFromUserDetail(userDetail));
+                    }
+                    setUserDetailTab(id);
+                  }}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    userDetailTab === id
+                      ? 'bg-brand-primary text-white'
+                      : 'bg-gray-100 text-text-secondary hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
 
-            {subEdit && String(userDetail.role ?? '').toLowerCase() === 'student' ? (
+            {userDetailTab === 'view' ? (
+              <div className="space-y-6">
+                {signupEdit ? (
+                  <div className="border-t border-gray-200 pt-4 dark:border-gray-700">
+                    <p className="mb-4 font-semibold text-text-secondary">
+                      {t('dashboard.users.signupSection')}
+                    </p>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <UserDetailReadonlyRow
+                        label={t('dashboard.users.signupUserType')}
+                        value={
+                          signupEdit.userType === SignupUserType.MALE
+                            ? t('dashboard.users.signupUserTypeMale')
+                            : signupEdit.userType === SignupUserType.FEMALE
+                              ? t('dashboard.users.signupUserTypeFemale')
+                              : signupEdit.userType === SignupUserType.CHILDREN
+                                ? t('dashboard.users.signupUserTypeChildren')
+                                : ''
+                        }
+                      />
+                      <UserDetailReadonlyRow
+                        label={t('dashboard.users.signupDateOfBirth')}
+                        value={signupEdit.dateOfBirth}
+                      />
+                      <UserDetailReadonlyRow
+                        label={t('dashboard.users.signupLanguageTag')}
+                        value={signupEdit.languageTag}
+                      />
+                      <UserDetailReadonlyRow
+                        label={t('dashboard.users.signupPreferredLanguage')}
+                        value={signupEdit.preferredLanguage}
+                      />
+                      <UserDetailReadonlyRow
+                        label={t('dashboard.users.signupNationality')}
+                        value={signupEdit.nationality}
+                      />
+                      <UserDetailReadonlyRow
+                        label={t('dashboard.users.signupCountryResidence')}
+                        value={signupEdit.countryResidence}
+                      />
+                      <UserDetailReadonlyRow
+                        label={t('dashboard.users.signupMotherTongue')}
+                        value={signupEdit.motherTongue}
+                      />
+                      {String(userDetail.role ?? '') === 'teacher' ? (
+                        <>
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupOtherLanguages')}
+                            value={
+                              signupEdit.otherLanguages
+                                ? signupTeacherOptionLabel(signupEdit.otherLanguages, t)
+                                : ''
+                            }
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupAcademicDegree')}
+                            value={
+                              signupEdit.academicDegree
+                                ? signupTeacherOptionLabel(signupEdit.academicDegree, t)
+                                : ''
+                            }
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupPrimaryIjazat')}
+                            value={
+                              signupEdit.primaryIjazat
+                                ? signupTeacherOptionLabel(signupEdit.primaryIjazat, t)
+                                : ''
+                            }
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupProficientQiraat')}
+                            value={formatJoinedLabels(signupEdit.proficientQiraat, (v) =>
+                              signupTeacherOptionLabel(v, t),
+                            )}
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupIjazatObtained')}
+                            value={formatJoinedLabels(signupEdit.ijazatObtained, (v) =>
+                              signupTeacherOptionLabel(v, t),
+                            )}
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupApprovedRiwayat')}
+                            value={formatJoinedLabels(signupEdit.approvedRiwayat, (v) =>
+                              signupTeacherOptionLabel(v, t),
+                            )}
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupTeachingSciences')}
+                            value={formatJoinedLabels(signupEdit.teachingSciences, (v) =>
+                              signupTeacherOptionLabel(v, t),
+                            )}
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupAuthorizedBooks')}
+                            value={signupEdit.authorizedBooks}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupMemorizedQuran')}
+                            value={
+                              signupEdit.memorizedQuran
+                                ? signupQuizOptionLabel(signupEdit.memorizedQuran, t)
+                                : ''
+                            }
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupAmount')}
+                            value={
+                              signupEdit.amount
+                                ? signupQuizOptionLabel(signupEdit.amount, t)
+                                : ''
+                            }
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupProgram')}
+                            value={
+                              signupEdit.program
+                                ? signupQuizOptionLabel(signupEdit.program, t)
+                                : ''
+                            }
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupWeekly')}
+                            value={
+                              signupEdit.weekly
+                                ? signupQuizOptionLabel(signupEdit.weekly, t)
+                                : ''
+                            }
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupSurah')}
+                            value={
+                              signupEdit.surah
+                                ? signupQuizOptionLabel(signupEdit.surah, t)
+                                : ''
+                            }
+                          />
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.signupPlan')}
+                            value={
+                              signupEdit.signupPlan
+                                ? signupQuizOptionLabel(signupEdit.signupPlan, t)
+                                : ''
+                            }
+                          />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {subEdit && String(userDetail.role ?? '') !== 'teacher' ? (
+                  <div className="border-t border-blue-900/15 bg-blue-50/40 px-1 py-4 dark:border-blue-900/40 dark:bg-blue-950/20">
+                    <p className="mb-4 font-semibold text-text-secondary">
+                      {t('dashboard.users.subscriptionSection')}
+                    </p>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <UserDetailReadonlyRow
+                        label={t('dashboard.users.subscriptionPlan')}
+                        value={
+                          subEdit.signupPlan
+                            ? signupQuizOptionLabel(subEdit.signupPlan, t)
+                            : ''
+                        }
+                      />
+                      <UserDetailReadonlyRow
+                        label={t('dashboard.users.subscriptionPaidAt')}
+                        value={
+                          subEdit.subscriptionPaidAt
+                            ? new Date(subEdit.subscriptionPaidAt).toLocaleString()
+                            : ''
+                        }
+                      />
+                      <UserDetailReadonlyRow
+                        label={t('dashboard.users.subscriptionEndsAt')}
+                        value={
+                          subEdit.subscriptionEndsAt
+                            ? new Date(subEdit.subscriptionEndsAt).toLocaleString()
+                            : ''
+                        }
+                      />
+                      {(() => {
+                        const subRaw = userDetail.subscription;
+                        if (!subRaw || typeof subRaw !== 'object') return null;
+                        const active = (subRaw as { accessActive?: boolean }).accessActive;
+                        if (active === undefined) return null;
+                        return (
+                          <UserDetailReadonlyRow
+                            label={t('dashboard.users.subscriptionAccessLabel')}
+                            value={
+                              active
+                                ? t('dashboard.users.subscriptionAccessActive')
+                                : t('dashboard.users.subscriptionAccessExpired')
+                            }
+                          />
+                        );
+                      })()}
+                      <UserDetailReadonlyRow
+                        label={t('dashboard.users.subscriptionRoom')}
+                        value={(() => {
+                          if (
+                            !subEdit.assignedStudyRoomId ||
+                            subEdit.assignedStudyRoomId === '__none__'
+                          ) {
+                            return t('dashboard.users.subscriptionRoomUnset');
+                          }
+                          const room = userModalRooms.find(
+                            (r) => String(r._id ?? '') === subEdit.assignedStudyRoomId,
+                          );
+                          if (!room) return subEdit.assignedStudyRoomId;
+                          const ne = String(room.nameEn ?? '');
+                          const na = String(room.nameAr ?? '');
+                          return ne || na || subEdit.assignedStudyRoomId;
+                        })()}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                {userModal && String(userDetail.role ?? '') === 'student' && adminToken ? (
+                  <UserMonthlyAttendanceSection
+                    studentId={userModal.id}
+                    serverUrl={serverUrl}
+                    adminToken={adminToken}
+                  />
+                ) : null}
+
+                {userModal && String(userDetail.role ?? '') === 'teacher' && adminToken ? (
+                  <UserTeacherRatingsSection
+                    teacherId={userModal.id}
+                    serverUrl={serverUrl}
+                    adminToken={adminToken}
+                  />
+                ) : null}
+              </div>
+            ) : (
+              <>
+            {subEdit && String(userDetail.role ?? '') !== 'teacher' ? (
               <div className="border-t border-blue-900/15 bg-blue-50/40 px-1 py-4 dark:border-blue-900/40 dark:bg-blue-950/20">
                 <p className="mb-1 font-semibold text-text-secondary">
                   {t('dashboard.users.subscriptionSection')}
@@ -2678,89 +3395,258 @@ export function AdminDashboardPage() {
                       }
                     />
                   </Field>
-                  <Field label={t('dashboard.users.signupMemorizedQuran')}>
-                    <Select
-                      value={signupEdit.memorizedQuran}
-                      onChange={(e) =>
-                        setSignupEdit((s) =>
-                          s ? { ...s, memorizedQuran: e.target.value } : s,
-                        )
-                      }
-                    >
-                      {signupQuizSelectOptions(SIGNUP_QUIZ_MEMORIZED, signupEdit.memorizedQuran, t).map((o) => (
-                        <option key={o.value || '__unset'} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field label={t('dashboard.users.signupAmount')}>
-                    <Select
-                      value={signupEdit.amount}
-                      onChange={(e) =>
-                        setSignupEdit((s) => (s ? { ...s, amount: e.target.value } : s))
-                      }
-                    >
-                      {signupQuizSelectOptions(SIGNUP_QUIZ_AMOUNT, signupEdit.amount, t).map((o) => (
-                        <option key={o.value || '__unset'} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field label={t('dashboard.users.signupProgram')}>
-                    <Select
-                      value={signupEdit.program}
-                      onChange={(e) =>
-                        setSignupEdit((s) =>
-                          s
-                            ? {
-                                ...s,
-                                program: e.target.value,
-                                ...(SIGNUP_PROGRAM_SKIPS_AMOUNT_WEEKLY_SURAH.has(e.target.value)
-                                  ? { amount: '', weekly: '', surah: '' }
-                                  : {}),
-                              }
-                            : s,
-                        )
-                      }
-                    >
-                      {signupQuizSelectOptions(SIGNUP_QUIZ_PROGRAM, signupEdit.program, t).map((o) => (
-                        <option key={o.value || '__unset'} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field label={t('dashboard.users.signupWeekly')}>
-                    <Select
-                      value={signupEdit.weekly}
-                      onChange={(e) =>
-                        setSignupEdit((s) => (s ? { ...s, weekly: e.target.value } : s))
-                      }
-                    >
-                      {signupQuizSelectOptions(SIGNUP_QUIZ_WEEKLY, signupEdit.weekly, t).map((o) => (
-                        <option key={o.value || '__unset'} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field label={t('dashboard.users.signupSurah')}>
-                    <Select
-                      value={signupEdit.surah}
-                      onChange={(e) =>
-                        setSignupEdit((s) => (s ? { ...s, surah: e.target.value } : s))
-                      }
-                    >
-                      {signupQuizSelectOptions(SIGNUP_QUIZ_SURAH, signupEdit.surah, t).map((o) => (
-                        <option key={o.value || '__unset'} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  {String(userDetail.role ?? '').toLowerCase() === 'student' ? (
+                  {String(userDetail.role ?? '') === 'teacher' ? (
+                    <>
+                      <Field label={t('dashboard.users.signupOtherLanguages')}>
+                        <Select
+                          value={signupEdit.otherLanguages}
+                          onChange={(e) =>
+                            setSignupEdit((s) =>
+                              s ? { ...s, otherLanguages: e.target.value } : s,
+                            )
+                          }
+                        >
+                          {teacherSelectOptions(
+                            TEACHER_LANGUAGE_OPTIONS,
+                            signupEdit.otherLanguages,
+                            t,
+                          ).map((o) => (
+                            <option key={o.value || '__unset'} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label={t('dashboard.users.signupAcademicDegree')}>
+                        <Select
+                          value={signupEdit.academicDegree}
+                          onChange={(e) =>
+                            setSignupEdit((s) =>
+                              s ? { ...s, academicDegree: e.target.value } : s,
+                            )
+                          }
+                        >
+                          {teacherSelectOptions(
+                            TEACHER_DEGREE_OPTIONS,
+                            signupEdit.academicDegree,
+                            t,
+                          ).map((o) => (
+                            <option key={o.value || '__unset'} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label={t('dashboard.users.signupPrimaryIjazat')}>
+                        <Select
+                          value={signupEdit.primaryIjazat}
+                          onChange={(e) =>
+                            setSignupEdit((s) =>
+                              s ? { ...s, primaryIjazat: e.target.value } : s,
+                            )
+                          }
+                        >
+                          {teacherSelectOptions(
+                            TEACHER_NARRATION_OPTIONS,
+                            signupEdit.primaryIjazat,
+                            t,
+                          ).map((o) => (
+                            <option key={o.value || '__unset'} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field
+                        label={t('dashboard.users.signupProficientQiraat')}
+                        className="sm:col-span-2"
+                      >
+                        <CheckboxMultiSelect
+                          values={signupEdit.proficientQiraat}
+                          onChange={(next) =>
+                            setSignupEdit((s) =>
+                              s ? { ...s, proficientQiraat: next } : s,
+                            )
+                          }
+                          options={TEACHER_QIRAAT_OPTIONS.map((v) => ({
+                            value: v,
+                            label: signupTeacherOptionLabel(v, t),
+                          }))}
+                        />
+                      </Field>
+                      <Field
+                        label={t('dashboard.users.signupIjazatObtained')}
+                        className="sm:col-span-2"
+                      >
+                        <CheckboxMultiSelect
+                          values={signupEdit.ijazatObtained}
+                          onChange={(next) =>
+                            setSignupEdit((s) =>
+                              s ? { ...s, ijazatObtained: next } : s,
+                            )
+                          }
+                          options={TEACHER_NARRATION_OPTIONS.map((v) => ({
+                            value: v,
+                            label: signupTeacherOptionLabel(v, t),
+                          }))}
+                        />
+                      </Field>
+                      <Field
+                        label={t('dashboard.users.signupApprovedRiwayat')}
+                        className="sm:col-span-2"
+                      >
+                        <CheckboxMultiSelect
+                          values={signupEdit.approvedRiwayat}
+                          onChange={(next) =>
+                            setSignupEdit((s) =>
+                              s ? { ...s, approvedRiwayat: next } : s,
+                            )
+                          }
+                          options={TEACHER_NARRATION_OPTIONS.map((v) => ({
+                            value: v,
+                            label: signupTeacherOptionLabel(v, t),
+                          }))}
+                        />
+                      </Field>
+                      <Field
+                        label={t('dashboard.users.signupTeachingSciences')}
+                        className="sm:col-span-2"
+                      >
+                        <CheckboxMultiSelect
+                          values={signupEdit.teachingSciences}
+                          onChange={(next) =>
+                            setSignupEdit((s) =>
+                              s ? { ...s, teachingSciences: next } : s,
+                            )
+                          }
+                          options={TEACHER_SCIENCE_OPTIONS.map((v) => ({
+                            value: v,
+                            label: signupTeacherOptionLabel(v, t),
+                          }))}
+                        />
+                      </Field>
+                      <Field
+                        label={t('dashboard.users.signupAuthorizedBooks')}
+                        className="sm:col-span-2"
+                      >
+                        <TextArea
+                          value={signupEdit.authorizedBooks}
+                          onChange={(e) =>
+                            setSignupEdit((s) =>
+                              s ? { ...s, authorizedBooks: e.target.value } : s,
+                            )
+                          }
+                          rows={3}
+                        />
+                      </Field>
+                    </>
+                  ) : (
+                    <>
+                      <Field label={t('dashboard.users.signupMemorizedQuran')}>
+                        <Select
+                          value={signupEdit.memorizedQuran}
+                          onChange={(e) =>
+                            setSignupEdit((s) =>
+                              s ? { ...s, memorizedQuran: e.target.value } : s,
+                            )
+                          }
+                        >
+                          {signupQuizSelectOptions(
+                            SIGNUP_QUIZ_MEMORIZED,
+                            signupEdit.memorizedQuran,
+                            t,
+                          ).map((o) => (
+                            <option key={o.value || '__unset'} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label={t('dashboard.users.signupAmount')}>
+                        <Select
+                          value={signupEdit.amount}
+                          onChange={(e) =>
+                            setSignupEdit((s) => (s ? { ...s, amount: e.target.value } : s))
+                          }
+                        >
+                          {signupQuizSelectOptions(
+                            SIGNUP_QUIZ_AMOUNT,
+                            signupEdit.amount,
+                            t,
+                          ).map((o) => (
+                            <option key={o.value || '__unset'} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label={t('dashboard.users.signupProgram')}>
+                        <Select
+                          value={signupEdit.program}
+                          onChange={(e) =>
+                            setSignupEdit((s) =>
+                              s
+                                ? {
+                                    ...s,
+                                    program: e.target.value,
+                                    ...(SIGNUP_PROGRAM_SKIPS_AMOUNT_WEEKLY_SURAH.has(
+                                      e.target.value,
+                                    )
+                                      ? { amount: '', weekly: '', surah: '' }
+                                      : {}),
+                                  }
+                                : s,
+                            )
+                          }
+                        >
+                          {signupQuizSelectOptions(
+                            SIGNUP_QUIZ_PROGRAM,
+                            signupEdit.program,
+                            t,
+                          ).map((o) => (
+                            <option key={o.value || '__unset'} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label={t('dashboard.users.signupWeekly')}>
+                        <Select
+                          value={signupEdit.weekly}
+                          onChange={(e) =>
+                            setSignupEdit((s) => (s ? { ...s, weekly: e.target.value } : s))
+                          }
+                        >
+                          {signupQuizSelectOptions(
+                            SIGNUP_QUIZ_WEEKLY,
+                            signupEdit.weekly,
+                            t,
+                          ).map((o) => (
+                            <option key={o.value || '__unset'} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label={t('dashboard.users.signupSurah')}>
+                        <Select
+                          value={signupEdit.surah}
+                          onChange={(e) =>
+                            setSignupEdit((s) => (s ? { ...s, surah: e.target.value } : s))
+                          }
+                        >
+                          {signupQuizSelectOptions(SIGNUP_QUIZ_SURAH, signupEdit.surah, t).map(
+                            (o) => (
+                              <option key={o.value || '__unset'} value={o.value}>
+                                {o.label}
+                              </option>
+                            ),
+                          )}
+                        </Select>
+                      </Field>
+                    </>
+                  )}
+                  {String(userDetail.role ?? '') !== 'teacher' ? (
                     <Field label={t('dashboard.users.signupPlan')} className="sm:col-span-2">
                       <Select
                         value={signupEdit.signupPlan}
@@ -2768,11 +3654,13 @@ export function AdminDashboardPage() {
                           setSignupEdit((s) => (s ? { ...s, signupPlan: e.target.value } : s))
                         }
                       >
-                        {signupQuizSelectOptions(SIGNUP_QUIZ_PLAN, signupEdit.signupPlan, t).map((o) => (
-                          <option key={o.value || '__unset'} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
+                        {signupQuizSelectOptions(SIGNUP_QUIZ_PLAN, signupEdit.signupPlan, t).map(
+                          (o) => (
+                            <option key={o.value || '__unset'} value={o.value}>
+                              {o.label}
+                            </option>
+                          ),
+                        )}
                       </Select>
                     </Field>
                   ) : null}
@@ -2789,6 +3677,8 @@ export function AdminDashboardPage() {
                 </div>
               </div>
             ) : null}
+              </>
+            )}
           </div>
         )}
       </Modal>
@@ -2949,8 +3839,6 @@ export function AdminDashboardPage() {
             >
               <option value="general">{t('dashboard.notifications.types.general')}</option>
               <option value="chat">{t('dashboard.notifications.types.chat')}</option>
-              <option value="auction">{t('dashboard.notifications.types.auction')}</option>
-              <option value="order">{t('dashboard.notifications.types.order')}</option>
             </Select>
           </Field>
           <div className="flex justify-end gap-2">
@@ -2959,6 +3847,179 @@ export function AdminDashboardPage() {
             </Btn>
             <Btn type="submit" variant="primary">
               {t('dashboard.notifications.send')}
+            </Btn>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={sendRoomModal}
+        onClose={closeSendRoomModal}
+        title={t('dashboard.notifications.sendToRoomTitle')}
+        wide
+      >
+        <form onSubmit={(e) => void submitSendToRoom(e)} className="space-y-4">
+          <p className="text-sm text-text-secondary dark:text-gray-300">
+            {t('dashboard.notifications.sendToRoomHint')}
+          </p>
+          <Field label={t('dashboard.notifications.chooseRoom')}>
+            <Input
+              placeholder={t('dashboard.notifications.searchRooms')}
+              value={notifRoomSearch}
+              onChange={(e) => setNotifRoomSearch(e.target.value)}
+              className="mb-2"
+            />
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700">
+              {notifRoomsLoading ? (
+                <p className="p-3 text-sm text-text-muted">{t('dashboard.notifications.loadingRooms')}</p>
+              ) : filteredNotifRooms.length === 0 ? (
+                <p className="p-3 text-sm text-text-muted">{t('dashboard.notifications.noRoomsFound')}</p>
+              ) : (
+                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {filteredNotifRooms.map((room) => {
+                    const id = entityId(room._id) || entityId(room.id);
+                    const selected = selectedNotifRoomId === id;
+                    const seats = formatRoomOccupancy(room);
+                    return (
+                      <li key={id}>
+                        <button
+                          type="button"
+                          className={`flex w-full flex-col gap-0.5 px-3 py-2.5 text-start text-sm transition-colors ${
+                            selected
+                              ? 'bg-brand-primary/15 ring-2 ring-inset ring-brand-primary'
+                              : 'hover:bg-gray-50 dark:hover:bg-gray-800/80'
+                          }`}
+                          onClick={() => void selectNotifRoom(id)}
+                        >
+                          <span className="font-medium text-text-primary dark:text-gray-100">
+                            {roomDisplayName(room)}
+                          </span>
+                          <span className="text-xs text-text-muted">
+                            {t('dashboard.notifications.roomSeats', { seats })}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </Field>
+
+          {selectedNotifRoomId ? (
+            <Field label={t('dashboard.notifications.roomMembers')}>
+              <div className="max-h-52 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                {roomMembersLoading ? (
+                  <p className="p-3 text-sm text-text-muted">
+                    {t('dashboard.notifications.loadingRoomMembers')}
+                  </p>
+                ) : roomNotifyMembers.length === 0 ? (
+                  <p className="p-3 text-sm text-text-muted">{t('dashboard.notifications.noRoomMembers')}</p>
+                ) : (
+                  <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {roomNotifyMembers.map((m) => {
+                      const hasPush = pushTokenUserIds.has(m.id);
+                      return (
+                      <li key={m.id} className="flex items-start justify-between gap-2 px-3 py-2 text-sm">
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-2 font-medium text-text-primary dark:text-gray-100">
+                            {m.name}
+                            {hasPush ? (
+                              <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                                {t('dashboard.notifications.pushBadge')}
+                              </span>
+                            ) : (
+                              <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-red-700 dark:text-red-300">
+                                {t('dashboard.notifications.noPushBadge')}
+                              </span>
+                            )}
+                          </span>
+                          {m.email ? (
+                            <span className="block text-xs text-text-muted">{m.email}</span>
+                          ) : null}
+                        </span>
+                        <span
+                          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${
+                            m.role === 'teacher'
+                              ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
+                              : 'bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-200'
+                          }`}
+                        >
+                          {m.role === 'teacher'
+                            ? t('dashboard.notifications.roleTeacher')
+                            : t('dashboard.notifications.roleStudent')}
+                        </span>
+                      </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+              {!roomMembersLoading && roomNotifyMembers.length > 0 ? (
+                <div className="mt-2 space-y-1 text-xs">
+                  <p className="text-text-muted">
+                    {t('dashboard.notifications.roomMembersCount', { count: roomNotifyMembers.length })}
+                  </p>
+                  {roomNotifyMembers.every((m) => !pushTokenUserIds.has(m.id)) ? (
+                    <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
+                      {t('dashboard.notifications.roomNoPushTokens')}
+                    </p>
+                  ) : roomNotifyMembers.some((m) => !pushTokenUserIds.has(m.id)) ? (
+                    <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100">
+                      {t('dashboard.notifications.roomSomeNoPush', {
+                        withPush: roomNotifyMembers.filter((m) => pushTokenUserIds.has(m.id)).length,
+                        withoutPush: roomNotifyMembers.filter((m) => !pushTokenUserIds.has(m.id)).length,
+                      })}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </Field>
+          ) : null}
+
+          <Field label={t('dashboard.notifications.titleField')}>
+            <Input
+              required
+              value={roomNotifForm.title}
+              onChange={(e) => setRoomNotifForm((f) => ({ ...f, title: e.target.value }))}
+            />
+          </Field>
+          <Field label={t('dashboard.notifications.bodyField')}>
+            <TextArea
+              required
+              rows={4}
+              value={roomNotifForm.body}
+              onChange={(e) => setRoomNotifForm((f) => ({ ...f, body: e.target.value }))}
+            />
+          </Field>
+          <Field label={t('dashboard.notifications.typeField')}>
+            <Select
+              value={roomNotifForm.type}
+              onChange={(e) => setRoomNotifForm((f) => ({ ...f, type: e.target.value }))}
+            >
+              <option value="general">{t('dashboard.notifications.types.general')}</option>
+              <option value="chat">{t('dashboard.notifications.types.chat')}</option>
+            </Select>
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Btn type="button" variant="secondary" onClick={closeSendRoomModal}>
+              {t('common.cancel')}
+            </Btn>
+            <Btn
+              type="submit"
+              variant="primary"
+              disabled={
+                sendingRoomNotif ||
+                roomMembersLoading ||
+                !selectedNotifRoomId ||
+                roomNotifyMembers.length === 0
+              }
+            >
+              {sendingRoomNotif
+                ? t('common.working')
+                : t('dashboard.notifications.sendToRoomMembers', {
+                    count: roomNotifyMembers.length,
+                  })}
             </Btn>
           </div>
         </form>
@@ -2991,8 +4052,6 @@ export function AdminDashboardPage() {
             >
               <option value="general">{t('dashboard.notifications.types.general')}</option>
               <option value="chat">{t('dashboard.notifications.types.chat')}</option>
-              <option value="auction">{t('dashboard.notifications.types.auction')}</option>
-              <option value="order">{t('dashboard.notifications.types.order')}</option>
             </Select>
           </Field>
           <div className="flex justify-end gap-2">

@@ -62,7 +62,6 @@ export function RestoreBackupPanel({ onMessage }: Props) {
   useEffect(() => {
     // Initial fetch when the panel mounts; matches the pattern used elsewhere
     // in the dashboard for tab-scoped data loads.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
   }, [refresh]);
 

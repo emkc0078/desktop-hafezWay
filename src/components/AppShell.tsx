@@ -3,7 +3,9 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAdminSettings } from '@/context/AdminSettingsContext';
 import { useLocale } from '@/context/LocaleContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { AppUpdateBanner } from '@/components/AppUpdateBanner';
 import { Btn, Modal } from '@/components/ui';
+import { useAppVersion } from '@/hooks/useAppVersion';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `rounded-lg px-4 py-2 text-sm font-medium transition ${
@@ -17,6 +19,7 @@ export function AppShell() {
   const { darkMode, setDarkMode } = useAdminSettings();
   const location = useLocation();
   const navigate = useNavigate();
+  const appVersion = useAppVersion();
   const [logsGateOpen, setLogsGateOpen] = useState(false);
 
   const closeLogsGate = useCallback(() => setLogsGateOpen(false), []);
@@ -59,9 +62,25 @@ export function AppShell() {
         </div>
       </Modal>
 
+      <AppUpdateBanner />
+
       <div className="border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 rtl-flip-row">
-          <span className="font-semibold text-brand-primary">{t('nav.brand')}</span>
+          <div className="flex min-w-0 items-center gap-3 rtl-flip-row">
+            <img
+              src={`${import.meta.env.BASE_URL}hafezway-logo.png`}
+              alt=""
+              className="h-14 w-14 shrink-0 rounded-lg object-contain sm:h-16 sm:w-16"
+            />
+            <div className="min-w-0">
+              <div className="font-semibold text-brand-primary">{t('nav.brand')}</div>
+              {appVersion ? (
+                <div className="text-xs text-text-muted dark:text-gray-400">
+                  {t('nav.version', { version: appVersion })}
+                </div>
+              ) : null}
+            </div>
+          </div>
           <div className="flex flex-wrap items-center gap-3 rtl-flip-row">
             <nav className="flex gap-2">
               <NavLink to="/" end className={linkClass}>

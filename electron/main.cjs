@@ -311,11 +311,15 @@ ipcMain.handle('admin:run-restore-on-server', async (_evt, rawOpts) => {
 });
 
 function createWindow() {
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'icon.png')
+    : path.join(__dirname, '../build/icon.png');
   const win = new BrowserWindow({
     width: 1280,
     height: 840,
     minWidth: 900,
     minHeight: 600,
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -339,14 +343,147 @@ function createWindow() {
     shell.openExternal(url);
     return { action: 'deny' };
   });
+
+  return win;
 }
 
-app.whenReady().then(createWindow);
+/** @type {import('electron-updater').AppUpdater | null} */
+let autoUpdaterInstance = null;
+let updaterWired = false;
+
+function getAutoUpdater() {
+  if (!autoUpdaterInstance) {
+    ({ autoUpdater: autoUpdaterInstance } = require('electron-updater'));
+    autoUpdaterInstance.autoDownload = false;
+    autoUpdaterInstance.autoInstallOnAppQuit = true;
+  }
+  return autoUpdaterInstance;
+}
+
+function sendToWindows(channel, payload) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(channel, payload);
+  }
+}
+
+function setupAutoUpdater(win) {
+  if (!win) return;
+
+  const currentVersion = app.getVersion();
+
+  // Unpackaged `npm run dev`: show a preview banner so the UI is visible immediately.
+  if (!app.isPackaged) {
+    const pushPreview = () => {
+      if (win.isDestroyed()) return;
+      win.webContents.send('admin:update-available', {
+        version: '0.2.0',
+        currentVersion,
+        simulated: true,
+      });
+    };
+    if (win.webContents.isLoading()) {
+      win.webContents.once('did-finish-load', () => setTimeout(pushPreview, 800));
+    } else {
+      setTimeout(pushPreview, 800);
+    }
+  }
+
+  if (updaterWired) return;
+  updaterWired = true;
+
+  ipcMain.handle('admin:get-app-version', () => app.getVersion());
+
+  ipcMain.handle('admin:check-for-updates', async () => {
+    if (!app.isPackaged) {
+      sendToWindows('admin:update-available', {
+        version: '0.2.0',
+        currentVersion: app.getVersion(),
+        simulated: true,
+      });
+      return { ok: true, simulated: true };
+    }
+    try {
+      const result = await getAutoUpdater().checkForUpdates();
+      return { ok: true, updateInfo: result?.updateInfo ?? null };
+    } catch (e) {
+      const message = e?.message || String(e);
+      sendToWindows('admin:update-error', message);
+      return { ok: false, error: message };
+    }
+  });
+
+  ipcMain.handle('admin:download-update', async () => {
+    if (!app.isPackaged) {
+      sendToWindows('admin:update-downloaded', {
+        version: '0.2.0',
+        currentVersion: app.getVersion(),
+        simulated: true,
+      });
+      return { ok: true, simulated: true };
+    }
+    try {
+      await getAutoUpdater().downloadUpdate();
+      return { ok: true };
+    } catch (e) {
+      const message = e?.message || String(e);
+      sendToWindows('admin:update-error', message);
+      return { ok: false, error: message };
+    }
+  });
+
+  ipcMain.handle('admin:install-update', () => {
+    if (!app.isPackaged) return { ok: true, simulated: true };
+    getAutoUpdater().quitAndInstall(false, true);
+    return { ok: true };
+  });
+
+  if (!app.isPackaged) return;
+
+  const updater = getAutoUpdater();
+  updater.on('update-available', (info) => {
+    sendToWindows('admin:update-available', {
+      version: info.version,
+      currentVersion: app.getVersion(),
+      releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
+    });
+  });
+  updater.on('download-progress', (progress) => {
+    sendToWindows('admin:update-download-progress', {
+      percent: progress.percent,
+      transferred: progress.transferred,
+      total: progress.total,
+      bytesPerSecond: progress.bytesPerSecond,
+    });
+  });
+  updater.on('update-downloaded', (info) => {
+    sendToWindows('admin:update-downloaded', {
+      version: info.version,
+      currentVersion: app.getVersion(),
+    });
+  });
+  updater.on('error', (err) => {
+    sendToWindows('admin:update-error', err?.message || String(err));
+  });
+
+  setTimeout(() => {
+    updater.checkForUpdates().catch((err) => {
+      sendToWindows('admin:update-error', err?.message || String(err));
+    });
+  }, 4000);
+}
+
+app.whenReady().then(() => {
+  const win = createWindow();
+  setupAutoUpdater(win);
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  if (BrowserWindow.getAllWindows().length === 0) {
+    const win = createWindow();
+    setupAutoUpdater(win);
+  }
 });
