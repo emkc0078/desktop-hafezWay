@@ -45,17 +45,24 @@ jobs:
           path: dist
           retention-days: 14
 
-  package:
-    name: Package Electron (Linux)
+  # Packages + publishes a GitHub Release so installed apps (electron-updater) see the new version.
+  release-windows:
+    name: Release Windows
     needs: build
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
-      github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master')
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Needed so the version bump commit can be pushed back to master.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -66,14 +73,39 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Build + package
-        run: npm run dist:ci
+      - name: Bump patch version
+        run: npm run bump
+
+      - name: Commit version bump
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          if git diff --cached --quiet; then
+            echo "No version change to commit"
+          else
+            git commit -m "chore: bump version for release [skip ci]"
+            git push origin HEAD:master
+          fi
+
+      - name: Icons + Vite build
+        run: npm run icons && npm run build
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Upload installer artifacts
+      - name: Build + publish GitHub Release
+        run: npx electron-builder --win --x64 --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Print release link
+        run: node scripts/print-release-link.cjs
+
+      - name: Upload local release folder
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-release-${{ github.sha }}
+          name: desktop-win-release-${{ github.sha }}
           path: release
           retention-days: 30

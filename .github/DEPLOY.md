@@ -1,10 +1,32 @@
 # CI (GitHub Actions)
 
-On push/PR to **`master`**: install, lint, Vite build.  
-On push to **`master`** (or manual dispatch): also run `npm run dist:ci` (`electron-builder --publish never`) and upload installer artifacts.
+## Pull requests / every push
+- Install, lint, Vite build
 
-GitHub Releases are **not** created by CI. Publish a release locally with `GH_TOKEN=… npm run release` (or `release:win` / `release:mac`).
+## Push to `master` (or manual **workflow_dispatch**)
+1. Bump `package.json` patch version and commit with `[skip ci]`
+2. Build Windows installers on `windows-latest`
+3. Publish a **GitHub Release** (`electron-builder --publish always`) with:
+   - `Hafez Way Admin Setup x.y.z.exe` (installer)
+   - `Hafez Way Admin x.y.z.exe` (portable)
+   - `latest.yml` (used by **electron-updater**)
 
-This app is **not** deployed under nginx on `hafezway.com`. Download builds from the Actions **Artifacts** tab.
+Uses the built-in `GITHUB_TOKEN` (`permissions: contents: write`). No personal `GH_TOKEN` secret is required for Actions.
 
+## Auto-update for installed apps
+Packaged installs already use `electron-updater`:
+- On launch they check GitHub Releases for a newer version
+- A banner asks the user to **Download update** (in-app) or **Open download page** (browser → latest release)
+- After download: **Install & restart**
+
+Manual download link (always latest):  
+https://github.com/emkc0078/desktop-hafezWay/releases/latest
+
+## Local publish (optional)
+```bash
+export GH_TOKEN='…'   # Contents: Read and write on this repo
+npm run release:win
+```
+
+This app is **not** deployed under nginx on `hafezway.com`.  
 Server deploy for API + web app is documented in `back-hafezWay/deploy/GITHUB_ACTIONS.md`.

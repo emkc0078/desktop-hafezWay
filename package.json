@@ -1,7 +1,7 @@
 {
   "name": "desktop-hafezway-admin",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.6",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {

@@ -51,6 +51,7 @@ export const en: TranslationTree = {
     readyTitle: 'Update v{version} downloaded',
     download: 'Download update',
     installRestart: 'Install & restart',
+    openReleasePage: 'Open download page',
     devPreview: '(Dev preview — real updates apply in the installed app after a GitHub Release.)',
   },
   auth: {

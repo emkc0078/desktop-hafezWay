@@ -98,6 +98,10 @@ export function AppUpdateBanner() {
     void bridge.installUpdate();
   }, [bridge, info]);
 
+  const openReleasePage = useCallback(() => {
+    void bridge?.openLatestReleasePage?.();
+  }, [bridge]);
+
   if (hidden || !info) return null;
 
   const percent = status.kind === 'downloading' ? Math.round(status.percent) : 0;
@@ -142,6 +146,11 @@ export function AppUpdateBanner() {
           {status.kind === 'downloaded' ? (
             <Btn type="button" variant="success" onClick={install}>
               {t('update.installRestart')}
+            </Btn>
+          ) : null}
+          {status.kind === 'available' || status.kind === 'error' || status.kind === 'downloaded' ? (
+            <Btn type="button" variant="secondary" onClick={openReleasePage}>
+              {t('update.openReleasePage')}
             </Btn>
           ) : null}
           {status.kind === 'available' || status.kind === 'error' ? (

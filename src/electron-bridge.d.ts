@@ -78,6 +78,7 @@ declare global {
       checkForUpdates: () => Promise<{ ok: boolean; simulated?: boolean; error?: string; updateInfo?: unknown }>;
       downloadUpdate: () => Promise<{ ok: boolean; simulated?: boolean; error?: string }>;
       installUpdate: () => Promise<{ ok: boolean; simulated?: boolean }>;
+      openLatestReleasePage: () => Promise<{ ok: boolean; url?: string }>;
       onUpdateAvailable: (listener: (info: AppUpdateInfo) => void) => () => void;
       onUpdateDownloadProgress: (listener: (progress: AppUpdateProgress) => void) => () => void;
       onUpdateDownloaded: (listener: (info: AppUpdateInfo) => void) => () => void;

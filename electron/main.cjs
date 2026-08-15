@@ -437,6 +437,12 @@ function setupAutoUpdater(win) {
     return { ok: true };
   });
 
+  ipcMain.handle('admin:open-latest-release-page', async () => {
+    const url = 'https://github.com/emkc0078/desktop-hafezWay/releases/latest';
+    await shell.openExternal(url);
+    return { ok: true, url };
+  });
+
   if (!app.isPackaged) return;
 
   const updater = getAutoUpdater();
