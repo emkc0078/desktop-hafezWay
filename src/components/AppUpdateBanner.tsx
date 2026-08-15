@@ -99,8 +99,8 @@ export function AppUpdateBanner() {
   }, [bridge, info]);
 
   const openReleasePage = useCallback(() => {
-    void bridge?.openLatestReleasePage?.();
-  }, [bridge]);
+    void bridge?.openLatestReleasePage?.(info?.version);
+  }, [bridge, info?.version]);
 
   if (hidden || !info) return null;
 

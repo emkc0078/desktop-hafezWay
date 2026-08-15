@@ -51,7 +51,7 @@ export const ar: TranslationTree = {
     readyTitle: 'تم تنزيل التحديث {version}',
     download: 'تنزيل التحديث',
     installRestart: 'تثبيت وإعادة التشغيل',
-    openReleasePage: 'فتح صفحة التنزيل',
+    openReleasePage: 'تنزيل برنامج التثبيت',
     devPreview: '(معاينة للتطوير — التحديثات الحقيقية تعمل في التطبيق المثبّت بعد نشر إصدار على GitHub.)',
   },
   auth: {
