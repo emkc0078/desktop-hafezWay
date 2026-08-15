@@ -1,31 +1,39 @@
 import { useLocale } from '@/context/LocaleContext';
 import type { Locale } from '@/i18n/types';
 
+const OPTIONS: { value: Locale; short: string }[] = [
+  { value: 'en', short: 'EN' },
+  { value: 'ar', short: 'AR' },
+];
+
 export function LanguageSwitcher({ className = '' }: { className?: string }) {
   const { locale, setLocale, t } = useLocale();
 
-  const options: { value: Locale; label: string }[] = [
-    { value: 'en', label: t('language.en') },
-    { value: 'ar', label: t('language.ar') },
-  ];
-
   return (
-    <label
-      className={`inline-flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300 ${className}`}
+    <div
+      className={`inline-flex rounded-lg border border-gray-300 bg-white p-0.5 dark:border-gray-600 dark:bg-gray-800 ${className}`}
+      role="group"
+      aria-label={t('language.label')}
     >
-      <span className="sr-only">{t('language.label')}</span>
-      <select
-        value={locale}
-        onChange={(e) => setLocale(e.target.value as Locale)}
-        className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-text-primary focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-        aria-label={t('language.label')}
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </label>
+      {OPTIONS.map((opt) => {
+        const active = locale === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setLocale(opt.value)}
+            aria-pressed={active}
+            aria-label={opt.value === 'en' ? t('language.en') : t('language.ar')}
+            className={`min-w-[2.5rem] rounded-md px-2.5 py-1.5 text-sm font-semibold transition ${
+              active
+                ? 'bg-brand-primary text-white shadow-sm'
+                : 'text-text-secondary hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+            }`}
+          >
+            {opt.short}
+          </button>
+        );
+      })}
+    </div>
   );
 }
