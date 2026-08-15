@@ -12,6 +12,19 @@ export const RoomScheduleDay = {
 
 export type RoomScheduleDay = (typeof RoomScheduleDay)[keyof typeof RoomScheduleDay];
 
+export const RoomTargetAudience = {
+  MALE: 'male',
+  FEMALE: 'female',
+  CHILDREN: 'children',
+} as const;
+
+export type RoomTargetAudience =
+  (typeof RoomTargetAudience)[keyof typeof RoomTargetAudience];
+
+export const ROOM_TARGET_AUDIENCE_VALUES = Object.values(
+  RoomTargetAudience,
+) as RoomTargetAudience[];
+
 export const RoomListStatus = {
   ACTIVE: 'active',
   INACTIVE: 'inactive',

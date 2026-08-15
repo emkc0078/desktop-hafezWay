@@ -11,6 +11,7 @@ import {
   type SessionStudentReportRow,
 } from '@/components/StudentReportDetailModal';
 import { RoomParticipantsCell, formatRoomOccupancy, roomParticipantsFromRecord } from '@/components/RoomParticipantsCell';
+import { CustomerServiceChatPanel } from '@/components/CustomerServiceChatPanel';
 import { SignupOffersPanel } from '@/components/SignupOffersPanel';
 import { SignupPlansPanel } from '@/components/SignupPlansPanel';
 import { SiteAgreementPanel } from '@/components/SiteAgreementPanel';
@@ -33,7 +34,9 @@ import {
 import {
   RoomListStatus,
   RoomScheduleDay,
+  RoomTargetAudience,
   ROOM_SCHEDULE_DAY_VALUES,
+  ROOM_TARGET_AUDIENCE_VALUES,
 } from '@/constants/roomEnums';
 import {
   SIGNUP_PROGRAM_SKIPS_AMOUNT_WEEKLY_SURAH,
@@ -62,7 +65,8 @@ type Tab =
   | 'notifications'
   | 'signupPlans'
   | 'offers'
-  | 'siteAgreement';
+  | 'siteAgreement'
+  | 'customerService';
 
 const AUTH_PROVIDER_GOOGLE = 'google';
 const AUTH_PROVIDER_TWITTER = 'twitter';
@@ -586,6 +590,7 @@ export function AdminDashboardPage() {
   const { serverUrl, liveAppUrl, adminToken, adminName, adminUserId } = useAdminSettings();
 
   const [tab, setTab] = useState<Tab>('rooms');
+  const [customerServiceUnread, setCustomerServiceUnread] = useState(0);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(
     null,
   );
@@ -637,6 +642,7 @@ export function AdminDashboardPage() {
   const [roomStatusFilter, setRoomStatusFilter] = useState<RoomListStatus>(RoomListStatus.ALL);
   const [userSearch, setUserSearch] = useState('');
   const [userRole, setUserRole] = useState('');
+  const [userTypeFilter, setUserTypeFilter] = useState('');
   const [commentSearch, setCommentSearch] = useState('');
   const [studentReportSearch, setStudentReportSearch] = useState('');
   const [roomRatingSearch, setRoomRatingSearch] = useState('');
@@ -760,6 +766,7 @@ export function AdminDashboardPage() {
       let url = `${serverUrl}/getUsers?page=${pages.users}&limit=20`;
       if (userSearch) url += `&search=${encodeURIComponent(userSearch)}`;
       if (userRole) url += `&role=${userRole}`;
+      if (userTypeFilter) url += `&userType=${encodeURIComponent(userTypeFilter)}`;
       const data = await adminFetchJson<{ data: unknown }>(url, adminToken);
       setUsersState({ loading: false, data: data.data });
     } catch (e) {
@@ -767,7 +774,7 @@ export function AdminDashboardPage() {
       setUsersState({ loading: false, error: err.message });
       showMessage(t('dashboard.users.loadError', { message: err.message }), 'error');
     }
-  }, [adminToken, serverUrl, pages.users, userSearch, userRole, showMessage, t]);
+  }, [adminToken, serverUrl, pages.users, userSearch, userRole, userTypeFilter, showMessage, t]);
 
   const loadComments = useCallback(async () => {
     if (!adminToken) return;
@@ -840,6 +847,7 @@ export function AdminDashboardPage() {
     nameEn: '',
     description: '',
     type: '',
+    targetAudience: '' as '' | RoomTargetAudience,
     participants: '',
     reservedTeacherId: '__none__',
     scheduleDays: [] as RoomScheduleDay[],
@@ -985,6 +993,7 @@ export function AdminDashboardPage() {
       nameEn: '',
       description: '',
       type: '',
+      targetAudience: '',
       participants: '',
       reservedTeacherId: '__none__',
       scheduleDays: [],
@@ -1018,11 +1027,18 @@ export function AdminDashboardPage() {
       setEditingRoomId(id);
       const reserved = room.reservedTeacher;
       const reservedTeacherId = entityId(reserved) || '__none__';
+      const audienceRaw = String(room.targetAudience ?? '').toLowerCase();
+      const targetAudience = (
+        ROOM_TARGET_AUDIENCE_VALUES as readonly string[]
+      ).includes(audienceRaw)
+        ? (audienceRaw as RoomTargetAudience)
+        : '';
       setRoomForm({
         nameAr: String(room.nameAr ?? ''),
         nameEn: String(room.nameEn ?? ''),
         description: String(room.description ?? ''),
         type: String(room.type ?? ''),
+        targetAudience,
         participants: '',
         reservedTeacherId,
         ...scheduleFromRoomRecord(room),
@@ -1041,13 +1057,14 @@ export function AdminDashboardPage() {
     const nameEn = roomForm.nameEn.trim();
     const description = roomForm.description.trim();
     const type = parseInt(roomForm.type, 10);
+    const targetAudience = roomForm.targetAudience;
     const participantIds = roomForm.participants
       ? roomForm.participants
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean)
       : [];
-    if (!nameAr || !nameEn || !type) {
+    if (!nameAr || !nameEn || !type || !targetAudience) {
       showMessage(t('dashboard.rooms.requiredFields'), 'error');
       return;
     }
@@ -1072,6 +1089,7 @@ export function AdminDashboardPage() {
         nameEn,
         description: description || undefined,
         type,
+        targetAudience,
         participantIds: participantIds.length ? participantIds : undefined,
         reservedTeacherId,
         schedule: {
@@ -1752,7 +1770,8 @@ export function AdminDashboardPage() {
     | { ratings?: Record<string, unknown>[]; pagination?: Pagination }
     | undefined;
 
-  const isWideDashboardTab = tab === 'rooms' || tab === 'users';
+  const isWideDashboardTab =
+    tab === 'rooms' || tab === 'users' || tab === 'customerService';
 
   return (
     <div className="min-h-full">
@@ -1790,6 +1809,7 @@ export function AdminDashboardPage() {
             ['signupPlans', t('dashboard.tabs.signupPlans')],
             ['offers', t('dashboard.tabs.offers')],
             ['siteAgreement', t('dashboard.tabs.siteAgreement')],
+            ['customerService', t('dashboard.tabs.customerService')],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -1802,7 +1822,18 @@ export function AdminDashboardPage() {
                 : 'bg-white text-text-secondary shadow-sm hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
             }`}
           >
-            {label}
+            <span className="inline-flex items-center gap-2">
+              {label}
+              {id === 'customerService' && customerServiceUnread > 0 && (
+                <span
+                  className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-xs font-semibold ${
+                    tab === id ? 'bg-white text-brand-primary' : 'bg-red-600 text-white'
+                  }`}
+                >
+                  {customerServiceUnread}
+                </span>
+              )}
+            </span>
           </button>
         ))}
       </nav>
@@ -1861,16 +1892,17 @@ export function AdminDashboardPage() {
                 <TableShell
                   className="admin-striped-table w-full"
                   colWidths={[
-                    '10%',
-                    '10%',
-                    '7%',
-                    '11%',
-                    '5%',
-                    '13%',
-                    '12%',
+                    '9%',
                     '9%',
                     '7%',
-                    '16%',
+                    '8%',
+                    '10%',
+                    '5%',
+                    '12%',
+                    '11%',
+                    '8%',
+                    '6%',
+                    '15%',
                   ]}
                 >
                   <thead>
@@ -1879,6 +1911,7 @@ export function AdminDashboardPage() {
                         t('dashboard.rooms.cols.arabic'),
                         t('dashboard.rooms.cols.english'),
                         t('dashboard.rooms.cols.type'),
+                        t('dashboard.rooms.cols.members'),
                         t('dashboard.rooms.cols.schedule'),
                         t('dashboard.rooms.cols.cap'),
                         t('dashboard.rooms.cols.participants'),
@@ -1907,6 +1940,15 @@ export function AdminDashboardPage() {
                         </td>
                         <td className={tableCellClass}>
                           {t('dashboard.rooms.persons', { count: Number(room.type) })}
+                        </td>
+                        <td className={`${tableCellClass} break-words`}>
+                          {(ROOM_TARGET_AUDIENCE_VALUES as readonly string[]).includes(
+                            String(room.targetAudience ?? '').toLowerCase(),
+                          )
+                            ? t(
+                                `dashboard.rooms.memberAudienceOptions.${String(room.targetAudience).toLowerCase()}`,
+                              )
+                            : t('dashboard.rooms.memberAudienceUnset')}
                         </td>
                         <td className={`${tableCellClass} text-xs break-words`}>
                           {formatRoomScheduleCell(room, t)}
@@ -2045,6 +2087,19 @@ export function AdminDashboardPage() {
                 <option value="teacher">{t('dashboard.users.teacher')}</option>
                 <option value="admin">{t('dashboard.users.admin')}</option>
               </Select>
+              <Select
+                value={userTypeFilter}
+                onChange={(e) => {
+                  setUserTypeFilter(e.target.value);
+                  setPages((p) => ({ ...p, users: 1 }));
+                }}
+                onBlur={() => void loadUsers()}
+              >
+                <option value="">{t('dashboard.users.allUserTypes')}</option>
+                <option value={SignupUserType.MALE}>{t('dashboard.users.signupUserTypeMale')}</option>
+                <option value={SignupUserType.FEMALE}>{t('dashboard.users.signupUserTypeFemale')}</option>
+                <option value={SignupUserType.CHILDREN}>{t('dashboard.users.signupUserTypeChildren')}</option>
+              </Select>
               <Btn variant="info" onClick={() => void loadUsers()}>
                 {t('common.refresh')}
               </Btn>
@@ -2060,21 +2115,23 @@ export function AdminDashboardPage() {
                 <TableShell
                   className="admin-striped-table admin-users-table w-full max-w-full"
                   colWidths={[
-                    '12%',
-                    '16%',
-                    '7%',
-                    '10%',
+                    '11%',
+                    '8%',
+                    '15%',
+                    '6%',
+                    '9%',
                     '8%',
                     '8%',
                     '6%',
                     '6%',
-                    '27%',
+                    '23%',
                   ]}
                 >
                   <thead>
                     <tr>
                       {[
                         t('dashboard.users.cols.name'),
+                        t('dashboard.users.cols.userType'),
                         t('dashboard.users.cols.email'),
                         t('dashboard.users.cols.role'),
                         t('dashboard.users.cols.plan'),
@@ -2100,19 +2157,34 @@ export function AdminDashboardPage() {
                         <td className={`${tableCellClass} break-words text-base`}>
                           {escapeHtml(user.firstName)} {escapeHtml(user.lastName)}
                         </td>
+                        <td className={`${tableCellClass} break-words text-base`}>
+                          {user.userType === SignupUserType.MALE
+                            ? t('dashboard.users.signupUserTypeMale')
+                            : user.userType === SignupUserType.FEMALE
+                              ? t('dashboard.users.signupUserTypeFemale')
+                              : user.userType === SignupUserType.CHILDREN
+                                ? t('dashboard.users.signupUserTypeChildren')
+                                : t('dashboard.users.signupUserTypeUnset')}
+                        </td>
                         <td className={`${tableCellClass} break-all text-base`}>{escapeHtml(user.email)}</td>
                         <td className={`${tableCellClass} break-words text-base`}>{escapeHtml(user.role)}</td>
                         <td className={`${tableCellClass} break-words text-base`}>
-                          {String(user.role ?? '') === 'teacher' ? (
-                            <span className="text-text-muted">—</span>
-                          ) : typeof user.signupPlan === 'string' &&
-                            user.signupPlan.trim() !== '' ? (
-                            <span title={user.signupPlan}>
-                              {escapeHtml(signupQuizOptionLabel(user.signupPlan, t))}
-                            </span>
-                          ) : (
-                            <span className="text-text-muted">{t('dashboard.users.noPlan')}</span>
-                          )}
+                          {(() => {
+                            const role = String(user.role ?? '').toLowerCase();
+                            if (role === 'teacher' || role === 'admin') {
+                              return <span className="text-text-muted">—</span>;
+                            }
+                            if (typeof user.signupPlan === 'string' && user.signupPlan.trim() !== '') {
+                              return (
+                                <span title={user.signupPlan}>
+                                  {escapeHtml(signupQuizOptionLabel(user.signupPlan, t))}
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="text-text-muted">{t('dashboard.users.noPlan')}</span>
+                            );
+                          })()}
                         </td>
                         <td className={tableCellClass}>
                           <UserSignInBadge provider={user.provider} t={t} />
@@ -2608,6 +2680,15 @@ export function AdminDashboardPage() {
         {tab === 'signupPlans' && <SignupPlansPanel />}
         {tab === 'offers' && <SignupOffersPanel />}
         {tab === 'siteAgreement' && <SiteAgreementPanel />}
+        <div className={tab === 'customerService' ? 'block' : 'hidden'}>
+          <CustomerServiceChatPanel
+            serverUrl={serverUrl}
+            adminToken={adminToken}
+            adminUserId={adminUserId}
+            active={tab === 'customerService'}
+            onUnreadCountChange={setCustomerServiceUnread}
+          />
+        </div>
       </main>
 
       {selectedSessionReport ? (
@@ -2661,6 +2742,28 @@ export function AdminDashboardPage() {
                 </option>
               ))}
             </Select>
+          </Field>
+          <Field label={t('dashboard.rooms.memberAudience')}>
+            <Select
+              required
+              value={roomForm.targetAudience}
+              onChange={(e) =>
+                setRoomForm((f) => ({
+                  ...f,
+                  targetAudience: e.target.value as '' | RoomTargetAudience,
+                }))
+              }
+            >
+              <option value="">{t('dashboard.rooms.selectMemberAudience')}</option>
+              {ROOM_TARGET_AUDIENCE_VALUES.map((a) => (
+                <option key={a} value={a}>
+                  {t(`dashboard.rooms.memberAudienceOptions.${a}`)}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-text-muted">
+              {t('dashboard.rooms.memberAudienceHint')}
+            </p>
           </Field>
           <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-700 dark:bg-gray-800/40">
             <p className="mb-3 text-sm font-medium text-text-secondary">
