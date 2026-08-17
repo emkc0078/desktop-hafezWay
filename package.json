@@ -18,7 +18,10 @@
     "release": "npm run bump && npm run icons && npm run build && electron-builder --win --mac --x64 --publish always && node scripts/print-release-link.cjs",
     "release:win": "npm run bump && npm run icons && npm run build && electron-builder --win --x64 --publish always && node scripts/print-release-link.cjs",
     "release:mac": "npm run bump && npm run icons && npm run build && electron-builder --mac --publish always && node scripts/print-release-link.cjs",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc -b",
+    "precommit": "npm run typecheck && npm run lint",
+    "prepare": "husky"
   },
   "build": {
     "appId": "com.hafezway.admin",
@@ -97,6 +100,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
+    "husky": "^9.1.7",
     "png-to-ico": "^3.0.2",
     "postcss": "^8.5.3",
     "sharp": "^0.35.3",

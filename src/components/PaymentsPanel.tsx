@@ -121,8 +121,14 @@ export function PaymentsPanel({
   const [rejectOpen, setRejectOpen] = useState(false);
   const searchRef = useRef(search);
   const pendingCbRef = useRef(onPendingCountChange);
-  searchRef.current = search;
-  pendingCbRef.current = onPendingCountChange;
+
+  useEffect(() => {
+    searchRef.current = search;
+  }, [search]);
+
+  useEffect(() => {
+    pendingCbRef.current = onPendingCountChange;
+  }, [onPendingCountChange]);
 
   const loadSettings = useCallback(async () => {
     if (!adminToken) return;
