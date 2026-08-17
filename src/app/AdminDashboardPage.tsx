@@ -12,6 +12,7 @@ import {
 } from '@/components/StudentReportDetailModal';
 import { RoomParticipantsCell, formatRoomOccupancy, roomParticipantsFromRecord } from '@/components/RoomParticipantsCell';
 import { CustomerServiceChatPanel } from '@/components/CustomerServiceChatPanel';
+import { PaymentsPanel } from '@/components/PaymentsPanel';
 import { SignupOffersPanel } from '@/components/SignupOffersPanel';
 import { SignupPlansPanel } from '@/components/SignupPlansPanel';
 import { SiteAgreementPanel } from '@/components/SiteAgreementPanel';
@@ -63,6 +64,7 @@ type Tab =
   | 'studentReports'
   | 'roomRatings'
   | 'notifications'
+  | 'payments'
   | 'signupPlans'
   | 'offers'
   | 'siteAgreement'
@@ -591,6 +593,7 @@ export function AdminDashboardPage() {
 
   const [tab, setTab] = useState<Tab>('rooms');
   const [customerServiceUnread, setCustomerServiceUnread] = useState(0);
+  const [paymentsPending, setPaymentsPending] = useState(0);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(
     null,
   );
@@ -1806,6 +1809,7 @@ export function AdminDashboardPage() {
             ['studentReports', t('dashboard.tabs.studentReports')],
             ['roomRatings', t('dashboard.tabs.roomRatings')],
             ['notifications', t('dashboard.tabs.notifications')],
+            ['payments', t('dashboard.tabs.payments')],
             ['signupPlans', t('dashboard.tabs.signupPlans')],
             ['offers', t('dashboard.tabs.offers')],
             ['siteAgreement', t('dashboard.tabs.siteAgreement')],
@@ -1824,6 +1828,15 @@ export function AdminDashboardPage() {
           >
             <span className="inline-flex items-center gap-2">
               {label}
+              {id === 'payments' && paymentsPending > 0 && (
+                <span
+                  className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-xs font-semibold ${
+                    tab === id ? 'bg-white text-brand-primary' : 'bg-amber-500 text-white'
+                  }`}
+                >
+                  {paymentsPending}
+                </span>
+              )}
               {id === 'customerService' && customerServiceUnread > 0 && (
                 <span
                   className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-xs font-semibold ${
@@ -2677,6 +2690,12 @@ export function AdminDashboardPage() {
           </div>
         )}
 
+        <div className={tab === 'payments' ? 'block' : 'hidden'}>
+          <PaymentsPanel
+            active={tab === 'payments'}
+            onPendingCountChange={setPaymentsPending}
+          />
+        </div>
         {tab === 'signupPlans' && <SignupPlansPanel />}
         {tab === 'offers' && <SignupOffersPanel />}
         {tab === 'siteAgreement' && <SiteAgreementPanel />}
