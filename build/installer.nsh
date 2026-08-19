@@ -1,15 +1,19 @@
-; Auto-close any running instance of the app before installing/uninstalling.
-; This runs silently so the user never sees the "cannot be closed" dialog.
+; Request highest available privileges so taskkill can close any running instance,
+; even if it was launched by a different user or with elevation.
+RequestExecutionLevel admin
 
 !macro customInstall
   DetailPrint "Closing any running instance of Hafez Way Admin..."
-  nsExec::ExecToLog 'taskkill /F /IM "Hafez Way Admin.exe" /T'
-  ; Give the OS a moment to release file locks before the installer proceeds.
-  Sleep 1500
+  ; /F  = force-terminate
+  ; /T  = kill the whole process tree (child processes too)
+  ; /IM = match by image name
+  nsExec::ExecToLog 'taskkill /F /T /IM "Hafez Way Admin.exe"'
+  ; Wait for the OS to release all file locks before the installer copies files.
+  Sleep 2000
 !macroend
 
 !macro customUnInstall
   DetailPrint "Closing any running instance of Hafez Way Admin..."
-  nsExec::ExecToLog 'taskkill /F /IM "Hafez Way Admin.exe" /T'
+  nsExec::ExecToLog 'taskkill /F /T /IM "Hafez Way Admin.exe"'
   Sleep 1000
 !macroend
