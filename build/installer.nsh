@@ -1,14 +1,9 @@
-; Request highest available privileges so taskkill can close any running instance,
-; even if it was launched by a different user or with elevation.
-RequestExecutionLevel admin
+; Force-close any running instance before the installer copies files.
+; Admin elevation is handled via win.requestedExecutionLevel in package.json.
 
 !macro customInstall
   DetailPrint "Closing any running instance of Hafez Way Admin..."
-  ; /F  = force-terminate
-  ; /T  = kill the whole process tree (child processes too)
-  ; /IM = match by image name
   nsExec::ExecToLog 'taskkill /F /T /IM "Hafez Way Admin.exe"'
-  ; Wait for the OS to release all file locks before the installer copies files.
   Sleep 2000
 !macroend
 

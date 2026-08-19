@@ -48,6 +48,7 @@
     ],
     "win": {
       "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator",
       "target": [
         "nsis"
       ]
