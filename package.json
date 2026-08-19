@@ -60,7 +60,8 @@
       "installerHeaderIcon": "build/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Hafez Way Admin"
+      "shortcutName": "Hafez Way Admin",
+      "include": "build/installer.nsh"
     },
     "mac": {
       "icon": "build/icon.icns",
