@@ -61,8 +61,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Hafez Way Admin",
-      "include": "build/installer.nsh",
-      "requestedExecutionLevel": "requireAdministrator"
+      "include": "build/installer.nsh"
     },
     "mac": {
       "icon": "build/icon.icns",
