@@ -111,6 +111,24 @@ html[dir='rtl'] .rtl-flip-row {
   line-height: 1.25;
 }
 
+/* New members (createdAt within 3 days) — red-tinted row over striped backgrounds */
+.admin-striped-table .admin-data-table tbody tr.is-new-member,
+.admin-striped-table .admin-data-table tbody tr.is-new-member:nth-child(odd),
+.admin-striped-table .admin-data-table tbody tr.is-new-member:nth-child(even) {
+  background-color: rgb(254 226 226);
+}
+.admin-striped-table .admin-data-table tbody tr.is-new-member:hover {
+  background-color: rgb(254 202 202);
+}
+.dark .admin-striped-table .admin-data-table tbody tr.is-new-member,
+.dark .admin-striped-table .admin-data-table tbody tr.is-new-member:nth-child(odd),
+.dark .admin-striped-table .admin-data-table tbody tr.is-new-member:nth-child(even) {
+  background-color: rgb(127 29 29 / 0.4);
+}
+.dark .admin-striped-table .admin-data-table tbody tr.is-new-member:hover {
+  background-color: rgb(153 27 27 / 0.55);
+}
+
 /* Log modal JSON highlighting (from logs-viewer.html) */
 .json-key {
   color: #881391;
