@@ -56,6 +56,18 @@ export type SignupUserType = (typeof SignupUserType)[keyof typeof SignupUserType
 
 export const SIGNUP_USER_TYPE_VALUES = Object.values(SignupUserType) as SignupUserType[];
 
+export const SignupChildGender = {
+  MALE: 'male',
+  FEMALE: 'female',
+} as const;
+
+export type SignupChildGender =
+  (typeof SignupChildGender)[keyof typeof SignupChildGender];
+
+export const SIGNUP_CHILD_GENDER_VALUES = Object.values(
+  SignupChildGender,
+) as SignupChildGender[];
+
 export const SIGNUP_PROGRAM_SKIPS_AMOUNT_WEEKLY_SURAH = new Set<string>([
   SignupProgram.RECITATION_CORRECTION,
   SignupProgram.TAFSIR_REFLECTION,

@@ -3,6 +3,7 @@ import { AdminSettingsProvider } from '@/context/AdminSettingsContext';
 import { LocaleProvider } from '@/context/LocaleContext';
 import { AppShell } from '@/components/AppShell';
 import { AdminDashboardPage } from '@/app/AdminDashboardPage';
+import { FinancePage } from '@/app/FinancePage';
 import { LogsViewerPage } from '@/app/LogsViewerPage';
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
         <Routes>
           <Route element={<AppShell />}>
             <Route index element={<AdminDashboardPage />} />
+            <Route path="finance" element={<FinancePage />} />
             <Route path="logs" element={<LogsViewerPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

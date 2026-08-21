@@ -21,10 +21,31 @@ type Conversation = {
   _id: string;
   supportUserId?: UserRef | string;
   supportUser?: UserRef | string;
+  supportCategory?: string;
+  support?: { category?: string; name?: string };
+  name?: string;
   lastMessage?: unknown;
   lastMessageAt?: string;
   unreadCount?: number;
 };
+
+type CategoryFilter = 'all' | 'technical' | 'complaint' | 'suggestion';
+
+function conversationCategory(conversation: Conversation): CategoryFilter {
+  const raw = String(
+    conversation.supportCategory ?? conversation.support?.category ?? 'technical',
+  )
+    .trim()
+    .toLowerCase();
+  if (raw === 'complaint' || raw === 'suggestion' || raw === 'technical') return raw;
+  return 'technical';
+}
+
+function categoryBadgeClass(category: CategoryFilter): string {
+  if (category === 'complaint') return 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200';
+  if (category === 'suggestion') return 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200';
+  return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200';
+}
 
 type ChatMessage = {
   _id: string;
@@ -111,6 +132,7 @@ export function CustomerServiceChatPanel({
   const { locale } = useLocale();
   const apiBase = serverUrl.replace(/\/$/, '');
   const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -169,6 +191,7 @@ export function CustomerServiceChatPanel({
     try {
       const params = new URLSearchParams({ page: '1', limit: '50' });
       if (search.trim()) params.set('search', search.trim());
+      if (categoryFilter !== 'all') params.set('category', categoryFilter);
       const response = await adminFetchJson<{
         data?: { conversations?: Conversation[] };
         conversations?: Conversation[];
@@ -209,6 +232,7 @@ export function CustomerServiceChatPanel({
     adminToken,
     adminUserId,
     apiBase,
+    categoryFilter,
     conversations.length,
     notifyIncomingMessages,
     onUnreadCountChange,
@@ -381,12 +405,38 @@ export function CustomerServiceChatPanel({
             <h2 className="text-lg font-semibold text-text-primary dark:text-gray-100">
               {t('dashboard.customerService.title')}
             </h2>
+            <p className="mt-1 text-xs text-text-muted dark:text-gray-400">
+              {t('dashboard.customerService.subtitle')}
+            </p>
             <Input
               className="mt-3"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={t('dashboard.customerService.search')}
             />
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(
+                [
+                  ['all', t('dashboard.customerService.filterAll')],
+                  ['complaint', t('dashboard.customerService.filterComplaint')],
+                  ['suggestion', t('dashboard.customerService.filterSuggestion')],
+                  ['technical', t('dashboard.customerService.filterTechnical')],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setCategoryFilter(id)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                    categoryFilter === id
+                      ? 'bg-brand-primary text-white'
+                      : 'bg-gray-100 text-text-secondary hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="max-h-[550px] overflow-y-auto">
             {listLoading && conversations.length === 0 ? (
@@ -406,6 +456,13 @@ export function CustomerServiceChatPanel({
               conversations.map((conversation) => {
                 const user = userForConversation(conversation);
                 const unread = Math.max(0, Number(conversation.unreadCount) || 0);
+                const category = conversationCategory(conversation);
+                const categoryLabel =
+                  category === 'complaint'
+                    ? t('dashboard.customerService.filterComplaint')
+                    : category === 'suggestion'
+                      ? t('dashboard.customerService.filterSuggestion')
+                      : t('dashboard.customerService.filterTechnical');
                 return (
                   <button
                     key={conversation._id}
@@ -425,9 +482,16 @@ export function CustomerServiceChatPanel({
                         {formatTime(conversation.lastMessageAt)}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-                      {[user.email, user.role ?? user.userType].filter(Boolean).join(' · ')}
-                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${categoryBadgeClass(category)}`}
+                      >
+                        {categoryLabel}
+                      </span>
+                      <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                        {[user.email, user.role ?? user.userType].filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <p className="truncate text-sm text-text-secondary dark:text-gray-300">
                         {messageText(conversation.lastMessage) ||
@@ -466,15 +530,28 @@ export function CustomerServiceChatPanel({
                   <h3 className="truncate font-semibold text-text-primary dark:text-gray-100">
                     {userName(userForConversation(selectedConversation), t('common.noName'))}
                   </h3>
-                  <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                    {[
-                      userForConversation(selectedConversation).email,
-                      userForConversation(selectedConversation).role ??
-                        userForConversation(selectedConversation).userType,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${categoryBadgeClass(
+                        conversationCategory(selectedConversation),
+                      )}`}
+                    >
+                      {conversationCategory(selectedConversation) === 'complaint'
+                        ? t('dashboard.customerService.filterComplaint')
+                        : conversationCategory(selectedConversation) === 'suggestion'
+                          ? t('dashboard.customerService.filterSuggestion')
+                          : t('dashboard.customerService.filterTechnical')}
+                    </span>
+                    <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                      {[
+                        userForConversation(selectedConversation).email,
+                        userForConversation(selectedConversation).role ??
+                          userForConversation(selectedConversation).userType,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  </div>
                 </div>
               </header>
 

@@ -16,8 +16,16 @@ import { PaymentsPanel } from '@/components/PaymentsPanel';
 import { SignupOffersPanel } from '@/components/SignupOffersPanel';
 import { SignupPlansPanel } from '@/components/SignupPlansPanel';
 import { SiteAgreementPanel } from '@/components/SiteAgreementPanel';
+import { VideosPanel } from '@/components/VideosPanel';
+import { AdvertisementsPanel } from '@/components/AdvertisementsPanel';
+import { HomeFeaturedBookPanel } from '@/components/HomeFeaturedBookPanel';
+import { HomeHadithsPanel } from '@/components/HomeHadithsPanel';
 import { UserMonthlyAttendanceSection } from '@/components/UserMonthlyAttendanceSection';
 import { UserTeacherRatingsSection } from '@/components/UserTeacherRatingsSection';
+import {
+  DashboardSideNav,
+  type DashboardNavEntry,
+} from '@/components/DashboardSideNav';
 import { useAppVersion } from '@/hooks/useAppVersion';
 import {
   Btn,
@@ -48,6 +56,8 @@ import {
   SIGNUP_QUIZ_SURAH,
   SIGNUP_QUIZ_WEEKLY,
   SignupUserType,
+  SignupChildGender,
+  SIGNUP_CHILD_GENDER_VALUES,
 } from '@/constants/signupQuizOptions';
 import {
   TEACHER_DEGREE_OPTIONS,
@@ -68,6 +78,10 @@ type Tab =
   | 'signupPlans'
   | 'offers'
   | 'siteAgreement'
+  | 'videos'
+  | 'advertisements'
+  | 'homeFeaturedBook'
+  | 'homeHadiths'
   | 'customerService';
 
 const AUTH_PROVIDER_GOOGLE = 'google';
@@ -134,6 +148,17 @@ function UserProfileBadge({
   );
 }
 
+/** New member window: signup `createdAt` within the last 72 hours. */
+const NEW_MEMBER_MS = 3 * 24 * 60 * 60 * 1000;
+
+function isNewMember(createdAt: unknown): boolean {
+  if (createdAt == null || createdAt === '') return false;
+  const ts = new Date(String(createdAt)).getTime();
+  if (Number.isNaN(ts)) return false;
+  const ageMs = Date.now() - ts;
+  return ageMs >= 0 && ageMs <= NEW_MEMBER_MS;
+}
+
 type Pagination = {
   page: number;
   pages: number;
@@ -162,6 +187,7 @@ type NotifyPickerUser = {
 /** Editable signup questionnaire fields (`PATCH /signup-options/:userId`). */
 type AdminSignupDraft = {
   userType: '' | SignupUserType;
+  childGender: '' | SignupChildGender;
   languageTag: string;
   preferredLanguage: string;
   nationality: string;
@@ -224,6 +250,11 @@ function signupDraftFromUserDetail(detail: Record<string, unknown>): AdminSignup
 
   return {
     userType,
+    childGender:
+      get('childGender') === SignupChildGender.MALE ||
+      get('childGender') === SignupChildGender.FEMALE
+        ? (get('childGender') as SignupChildGender)
+        : '',
     languageTag: get('languageTag'),
     preferredLanguage: get('preferredLanguage'),
     nationality: get('nationality'),
@@ -592,6 +623,7 @@ export function AdminDashboardPage() {
   const { serverUrl, liveAppUrl, adminToken, adminName, adminUserId } = useAdminSettings();
 
   const [tab, setTab] = useState<Tab>('rooms');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [customerServiceUnread, setCustomerServiceUnread] = useState(0);
   const [paymentsPending, setPaymentsPending] = useState(0);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(
@@ -851,6 +883,7 @@ export function AdminDashboardPage() {
     description: '',
     type: '',
     targetAudience: '' as '' | RoomTargetAudience,
+    childGender: '' as '' | SignupChildGender,
     participants: '',
     reservedTeacherId: '__none__',
     scheduleDays: [] as RoomScheduleDay[],
@@ -997,6 +1030,7 @@ export function AdminDashboardPage() {
       description: '',
       type: '',
       targetAudience: '',
+      childGender: '',
       participants: '',
       reservedTeacherId: '__none__',
       scheduleDays: [],
@@ -1042,6 +1076,12 @@ export function AdminDashboardPage() {
         description: String(room.description ?? ''),
         type: String(room.type ?? ''),
         targetAudience,
+        childGender:
+          audienceRaw === RoomTargetAudience.CHILDREN &&
+          (String(room.childGender ?? '').toLowerCase() === SignupChildGender.MALE ||
+            String(room.childGender ?? '').toLowerCase() === SignupChildGender.FEMALE)
+            ? (String(room.childGender).toLowerCase() as SignupChildGender)
+            : '',
         participants: '',
         reservedTeacherId,
         ...scheduleFromRoomRecord(room),
@@ -1067,8 +1107,27 @@ export function AdminDashboardPage() {
           .map((s) => s.trim())
           .filter(Boolean)
       : [];
-    if (!nameAr || !nameEn || !type || !targetAudience) {
+    if (!nameAr || !nameEn || !type) {
       showMessage(t('dashboard.rooms.requiredFields'), 'error');
+      return;
+    }
+    if (
+      !targetAudience ||
+      !ROOM_TARGET_AUDIENCE_VALUES.includes(targetAudience as RoomTargetAudience)
+    ) {
+      showMessage(t('dashboard.rooms.memberAudienceRequired'), 'error');
+      return;
+    }
+    const childGender =
+      targetAudience === RoomTargetAudience.CHILDREN
+        ? roomForm.childGender
+        : '';
+    if (
+      targetAudience === RoomTargetAudience.CHILDREN &&
+      childGender !== SignupChildGender.MALE &&
+      childGender !== SignupChildGender.FEMALE
+    ) {
+      showMessage(t('dashboard.rooms.childGenderRequired'), 'error');
       return;
     }
     const scheduleDays = roomForm.scheduleDays;
@@ -1093,6 +1152,8 @@ export function AdminDashboardPage() {
         description: description || undefined,
         type,
         targetAudience,
+        childGender:
+          targetAudience === RoomTargetAudience.CHILDREN ? childGender : null,
         participantIds: participantIds.length ? participantIds : undefined,
         reservedTeacherId,
         schedule: {
@@ -1189,6 +1250,12 @@ export function AdminDashboardPage() {
     const isTeacher = String(userDetail.role ?? '') === 'teacher';
     const body: Record<string, unknown> = {
       userType: signupEdit.userType === '' ? null : signupEdit.userType,
+      childGender:
+        signupEdit.userType === SignupUserType.CHILDREN
+          ? signupEdit.childGender === ''
+            ? null
+            : signupEdit.childGender
+          : null,
       languageTag: trimOrNull(signupEdit.languageTag),
       preferredLanguage: trimOrNull(signupEdit.preferredLanguage),
       nationality: trimOrNull(signupEdit.nationality),
@@ -1776,6 +1843,64 @@ export function AdminDashboardPage() {
   const isWideDashboardTab =
     tab === 'rooms' || tab === 'users' || tab === 'customerService';
 
+  const navEntries = useMemo<DashboardNavEntry[]>(
+    () => [
+      {
+        kind: 'group',
+        id: 'nav-rooms',
+        label: t('dashboard.nav.rooms'),
+        tabId: 'rooms',
+        children: [
+          { id: 'roomRatings', label: t('dashboard.tabs.roomRatings') },
+          { id: 'comments', label: t('dashboard.tabs.comments') },
+          { id: 'signupPlans', label: t('dashboard.tabs.signupPlans') },
+        ],
+      },
+      {
+        kind: 'group',
+        id: 'nav-users',
+        label: t('dashboard.nav.users'),
+        tabId: 'users',
+        children: [
+          { id: 'studentReports', label: t('dashboard.tabs.studentReports') },
+        ],
+      },
+      {
+        kind: 'item',
+        id: 'payments',
+        label: t('dashboard.tabs.payments'),
+        badge: paymentsPending,
+        badgeTone: 'amber',
+      },
+      {
+        kind: 'group',
+        id: 'nav-siteControl',
+        label: t('dashboard.nav.siteControl'),
+        children: [
+          { id: 'offers', label: t('dashboard.tabs.offers') },
+          { id: 'videos', label: t('dashboard.tabs.videos') },
+          { id: 'advertisements', label: t('dashboard.tabs.advertisements') },
+          { id: 'homeFeaturedBook', label: t('dashboard.tabs.homeFeaturedBook') },
+          { id: 'homeHadiths', label: t('dashboard.tabs.homeHadiths') },
+        ],
+      },
+      {
+        kind: 'item',
+        id: 'customerService',
+        label: t('dashboard.tabs.customerService'),
+        badge: customerServiceUnread,
+        badgeTone: 'red',
+      },
+      { id: 'notifications', label: t('dashboard.tabs.notifications'), kind: 'item' },
+      { id: 'siteAgreement', label: t('dashboard.tabs.siteAgreement'), kind: 'item' },
+    ],
+    [t, paymentsPending, customerServiceUnread],
+  );
+
+  const selectTab = useCallback((id: string) => {
+    setTab(id as Tab);
+  }, []);
+
   return (
     <div className="min-h-full">
       <header className="border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
@@ -1800,60 +1925,20 @@ export function AdminDashboardPage() {
         </div>
       </header>
 
-      <nav className="dashboard-nav-tabs flex flex-wrap justify-start gap-2 border-b border-gray-200 bg-gray-50 px-6 py-3 dark:border-gray-700 dark:bg-gray-950">
-        {(
-          [
-            ['rooms', t('dashboard.tabs.rooms')],
-            ['users', t('dashboard.tabs.users')],
-            ['comments', t('dashboard.tabs.comments')],
-            ['studentReports', t('dashboard.tabs.studentReports')],
-            ['roomRatings', t('dashboard.tabs.roomRatings')],
-            ['notifications', t('dashboard.tabs.notifications')],
-            ['payments', t('dashboard.tabs.payments')],
-            ['signupPlans', t('dashboard.tabs.signupPlans')],
-            ['offers', t('dashboard.tabs.offers')],
-            ['siteAgreement', t('dashboard.tabs.siteAgreement')],
-            ['customerService', t('dashboard.tabs.customerService')],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-              tab === id
-                ? 'bg-brand-primary text-white'
-                : 'bg-white text-text-secondary shadow-sm hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
-            }`}
-          >
-            <span className="inline-flex items-center gap-2">
-              {label}
-              {id === 'payments' && paymentsPending > 0 && (
-                <span
-                  className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-xs font-semibold ${
-                    tab === id ? 'bg-white text-brand-primary' : 'bg-amber-500 text-white'
-                  }`}
-                >
-                  {paymentsPending}
-                </span>
-              )}
-              {id === 'customerService' && customerServiceUnread > 0 && (
-                <span
-                  className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-xs font-semibold ${
-                    tab === id ? 'bg-white text-brand-primary' : 'bg-red-600 text-white'
-                  }`}
-                >
-                  {customerServiceUnread}
-                </span>
-              )}
-            </span>
-          </button>
-        ))}
-      </nav>
+      <div className="flex flex-col lg:flex-row lg:items-start">
+        <DashboardSideNav
+          entries={navEntries}
+          activeId={tab}
+          onSelect={selectTab}
+          mobileOpen={mobileNavOpen}
+          onMobileOpenChange={setMobileNavOpen}
+        />
 
-      <main
-        className={`mx-auto w-full space-y-6 overflow-x-hidden p-4 sm:p-6 ${isWideDashboardTab ? '' : 'max-w-7xl'}`}
-      >
+        <main
+          className={`min-w-0 flex-1 space-y-6 overflow-x-hidden p-4 sm:p-6 ${
+            isWideDashboardTab ? '' : 'mx-auto max-w-7xl'
+          }`}
+        >
         {tab === 'rooms' && (
           <Card>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -2161,15 +2246,30 @@ export function AdminDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {usersData.users.map((user) => (
-                      <tr
-                        key={String(user.id)}
-                        className="cursor-pointer"
-                        onClick={() => void openUser(String(user.id))}
-                      >
-                        <td className={`${tableCellClass} break-words text-base`}>
-                          {escapeHtml(user.firstName)} {escapeHtml(user.lastName)}
-                        </td>
+                    {usersData.users.map((user) => {
+                      const newMember = isNewMember(user.createdAt);
+                      return (
+                        <tr
+                          key={String(user.id)}
+                          className={`cursor-pointer${newMember ? ' is-new-member' : ''}`}
+                          onClick={() => void openUser(String(user.id))}
+                        >
+                          <td className={`${tableCellClass} break-words text-base`}>
+                            <span className="inline-flex items-center gap-1">
+                              {newMember ? (
+                                <span
+                                  className="shrink-0 text-amber-600 dark:text-amber-400"
+                                  title={t('dashboard.users.newMember')}
+                                  aria-label={t('dashboard.users.newMember')}
+                                >
+                                  ★
+                                </span>
+                              ) : null}
+                              <span>
+                                {escapeHtml(user.firstName)} {escapeHtml(user.lastName)}
+                              </span>
+                            </span>
+                          </td>
                         <td className={`${tableCellClass} break-words text-base`}>
                           {user.userType === SignupUserType.MALE
                             ? t('dashboard.users.signupUserTypeMale')
@@ -2287,7 +2387,8 @@ export function AdminDashboardPage() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </TableShell>
                 {renderPagination(usersData.pagination, 'users')}
@@ -2699,6 +2800,10 @@ export function AdminDashboardPage() {
         {tab === 'signupPlans' && <SignupPlansPanel />}
         {tab === 'offers' && <SignupOffersPanel />}
         {tab === 'siteAgreement' && <SiteAgreementPanel />}
+        {tab === 'videos' && <VideosPanel />}
+        {tab === 'advertisements' && <AdvertisementsPanel />}
+        {tab === 'homeFeaturedBook' && <HomeFeaturedBookPanel />}
+        {tab === 'homeHadiths' && <HomeHadithsPanel />}
         <div className={tab === 'customerService' ? 'block' : 'hidden'}>
           <CustomerServiceChatPanel
             serverUrl={serverUrl}
@@ -2708,7 +2813,8 @@ export function AdminDashboardPage() {
             onUnreadCountChange={setCustomerServiceUnread}
           />
         </div>
-      </main>
+        </main>
+      </div>
 
       {selectedSessionReport ? (
         <StudentReportDetailModal
@@ -2773,7 +2879,9 @@ export function AdminDashboardPage() {
                 }))
               }
             >
-              <option value="">{t('dashboard.rooms.selectMemberAudience')}</option>
+              <option value="" disabled>
+                {t('dashboard.rooms.selectMemberAudience')}
+              </option>
               {ROOM_TARGET_AUDIENCE_VALUES.map((a) => (
                 <option key={a} value={a}>
                   {t(`dashboard.rooms.memberAudienceOptions.${a}`)}
@@ -2784,6 +2892,32 @@ export function AdminDashboardPage() {
               {t('dashboard.rooms.memberAudienceHint')}
             </p>
           </Field>
+          {roomForm.targetAudience === RoomTargetAudience.CHILDREN ? (
+            <Field label={t('dashboard.rooms.childGender')}>
+              <Select
+                required
+                value={roomForm.childGender}
+                onChange={(e) =>
+                  setRoomForm((f) => ({
+                    ...f,
+                    childGender: e.target.value as '' | SignupChildGender,
+                  }))
+                }
+              >
+                <option value="" disabled>
+                  {t('dashboard.rooms.selectMemberAudience')}
+                </option>
+                {SIGNUP_CHILD_GENDER_VALUES.map((g) => (
+                  <option key={g} value={g}>
+                    {t(`dashboard.rooms.childGenderOptions.${g}`)}
+                  </option>
+                ))}
+              </Select>
+              <p className="mt-1 text-xs text-text-muted">
+                {t('dashboard.rooms.childGenderHint')}
+              </p>
+            </Field>
+          ) : null}
           <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 dark:border-gray-700 dark:bg-gray-800/40">
             <p className="mb-3 text-sm font-medium text-text-secondary">
               {t('dashboard.rooms.scheduleSection')}
@@ -3359,6 +3493,31 @@ export function AdminDashboardPage() {
                       <option value={SignupUserType.CHILDREN}>{t('dashboard.users.signupUserTypeChildren')}</option>
                     </Select>
                   </Field>
+                  {signupEdit.userType === SignupUserType.CHILDREN ? (
+                    <Field label={t('dashboard.users.signupChildGender')}>
+                      <Select
+                        value={signupEdit.childGender}
+                        onChange={(e) =>
+                          setSignupEdit((s) =>
+                            s
+                              ? {
+                                  ...s,
+                                  childGender: e.target.value as AdminSignupDraft['childGender'],
+                                }
+                              : s,
+                          )
+                        }
+                      >
+                        <option value="">{t('dashboard.users.signupChildGenderUnset')}</option>
+                        <option value={SignupChildGender.MALE}>
+                          {t('dashboard.users.signupChildGenderMale')}
+                        </option>
+                        <option value={SignupChildGender.FEMALE}>
+                          {t('dashboard.users.signupChildGenderFemale')}
+                        </option>
+                      </Select>
+                    </Field>
+                  ) : null}
                   <Field label={t('dashboard.users.signupDateOfBirth')}>
                     <Input
                       type="date"

@@ -86,6 +86,9 @@ export function AppShell() {
               <NavLink to="/" end className={linkClass}>
                 {t('nav.adminDashboard')}
               </NavLink>
+              <NavLink to="/finance" className={linkClass}>
+                {t('nav.finance')}
+              </NavLink>
               <NavLink to="/logs" onClick={onLogsNavClick} className={linkClass}>
                 {t('nav.logsSystem')}
               </NavLink>
