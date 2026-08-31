@@ -24,6 +24,8 @@ type SignupPlanRow = {
   sortOrder: number;
   isActive: boolean;
   tier: 'paid' | 'free';
+  track?: 'group' | 'individual';
+  monthlyHours?: number | null;
   priceAmount: number | null;
   currency: string;
   packageDetailsEn: string;
@@ -60,6 +62,8 @@ const emptyPlanForm = (): Partial<SignupPlanRow> & { planKey: string } => ({
   sortOrder: 0,
   isActive: true,
   tier: 'paid',
+  track: 'group',
+  monthlyHours: 2,
   priceAmount: 0,
   currency: 'EGP',
   packageDetailsEn: '',
@@ -153,7 +157,10 @@ export function SignupPlansPanel() {
     if (!adminToken) return;
     setLoading(true);
     try {
-      const body = { ...planForm };
+      const body = {
+        ...planForm,
+        track: planForm.tier === 'free' ? 'group' : (planForm.track ?? 'group'),
+      };
       if (editingKey) {
         await adminFetchJson(
           `${logsApiBase}/signup-plans/admin/${encodeURIComponent(editingKey)}`,
@@ -319,12 +326,13 @@ export function SignupPlansPanel() {
         <p className="mb-4 text-sm text-text-secondary dark:text-gray-300">
           {t('signupPlans.plansHint')}
         </p>
-        <TableShell colWidths={['14%', '18%', '18%', '8%', '8%', '8%', '34%']}>
+        <TableShell colWidths={['12%', '16%', '16%', '8%', '10%', '8%', '8%', '22%']}>
           <thead>
             <tr>
               <th className={tableHeadClass}>{t('signupPlans.colKey')}</th>
               <th className={tableHeadClass}>{t('signupPlans.colLabel')}</th>
               <th className={tableHeadClass}>{t('signupPlans.colLabelAr')}</th>
+              <th className={tableHeadClass}>{t('signupPlans.colTrack')}</th>
               <th className={tableHeadClass}>{t('signupPlans.colTier')}</th>
               <th className={tableHeadClass}>{t('signupPlans.colPrice')}</th>
               <th className={tableHeadClass}>{t('signupPlans.colActive')}</th>
@@ -338,6 +346,16 @@ export function SignupPlansPanel() {
                 <td className={tableCellClass}>{p.labelEn}</td>
                 <td className={`${tableCellClass} text-end`} dir="rtl">
                   {p.labelAr}
+                </td>
+                <td className={tableCellClass}>
+                  {p.track === 'individual'
+                    ? t('signupPlans.trackIndividual')
+                    : t('signupPlans.trackGroup')}
+                  {p.monthlyHours != null && p.monthlyHours > 0 ? (
+                    <div className="text-xs text-text-muted">
+                      {p.monthlyHours} {t('signupPlans.hoursUnit')}
+                    </div>
+                  ) : null}
                 </td>
                 <td className={tableCellClass}>{p.tier}</td>
                 <td className={tableCellClass}>
@@ -418,6 +436,38 @@ export function SignupPlansPanel() {
                 <option value="paid">paid</option>
                 <option value="free">free</option>
               </Select>
+            </Field>
+            <Field label={t('signupPlans.colTrack')}>
+              <Select
+                value={planForm.track ?? 'group'}
+                disabled={planForm.tier === 'free'}
+                onChange={(e) =>
+                  setPlanField(
+                    'track',
+                    e.target.value as 'group' | 'individual',
+                  )
+                }
+              >
+                <option value="group">{t('signupPlans.trackGroup')}</option>
+                <option value="individual">
+                  {t('signupPlans.trackIndividual')}
+                </option>
+              </Select>
+            </Field>
+            <Field label={t('signupPlans.monthlyHours')}>
+              <Input
+                type="number"
+                min={0}
+                value={String(planForm.monthlyHours ?? '')}
+                onChange={(e) =>
+                  setPlanField(
+                    'monthlyHours',
+                    e.target.value === ''
+                      ? null
+                      : parseInt(e.target.value, 10) || 0,
+                  )
+                }
+              />
             </Field>
             <Field label={t('signupPlans.sortOrder')}>
               <Input

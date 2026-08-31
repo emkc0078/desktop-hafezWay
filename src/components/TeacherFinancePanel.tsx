@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAdminSettings } from '@/context/AdminSettingsContext';
-import { useT } from '@/context/LocaleContext';
+import { useLocale, useT } from '@/context/LocaleContext';
 import { adminFetchJson, adminFetchResponse } from '@/utils/adminFetch';
 import { isAdminSessionExpiredError } from '@/utils/adminSession';
 import {
@@ -30,6 +30,9 @@ type Settlement = {
   roomsCount: number;
   sessionsCount: number;
   hours: number;
+  groupHours?: number;
+  individualHours?: number;
+  individualSessionsCount?: number;
   hourlyRate: number;
   amount: number;
   currency: string;
@@ -40,6 +43,7 @@ type Settlement = {
 
 type RoomDetail = {
   id: string;
+  type?: 'group';
   nameAr: string;
   nameEn: string;
   daysOfWeek?: string[];
@@ -48,6 +52,17 @@ type RoomDetail = {
   sessionHours?: number;
   sessionsCount?: number;
   hours?: number;
+};
+
+type IndividualSessionDetail = {
+  id: string;
+  type: 'individual';
+  studentId: string;
+  studentName: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  durationSeconds: number;
+  hours: number;
 };
 
 type TeacherFinanceRow = {
@@ -59,6 +74,10 @@ type TeacherFinanceRow = {
   roomsCount: number;
   sessionsCount: number;
   hours: number;
+  groupHours?: number;
+  groupSessionsCount?: number;
+  individualHours?: number;
+  individualSessionsCount?: number;
   hourlyRate: number;
   /** True when teacher has a personal rate (not only the global default). */
   isCustomRate?: boolean;
@@ -67,6 +86,7 @@ type TeacherFinanceRow = {
   status: 'open' | 'settled';
   settlement: Settlement | null;
   rooms: RoomDetail[];
+  individualSessions?: IndividualSessionDetail[];
 };
 
 type Totals = {
@@ -76,6 +96,9 @@ type Totals = {
   roomsCount: number;
   sessionsCount: number;
   hours: number;
+  groupHours?: number;
+  individualHours?: number;
+  individualSessionsCount?: number;
   amount: number;
 };
 
@@ -106,6 +129,28 @@ function formatMoney(amount: number, currency: string): string {
   return `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`;
 }
 
+function formatSessionWhen(iso: string | null | undefined, locale: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString(locale === 'ar' ? 'ar' : undefined, {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+}
+
+function formatDuration(seconds: number, locale: string): string {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (locale === 'ar') {
+    if (hours > 0) return `${hours} س ${minutes} د`;
+    return `${minutes} د`;
+  }
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 /** CryptoJS AES ciphertext often looks like `U2FsdGVkX1…` (sometimes with a leading `=`). */
 function looksLikeCryptoJsCipher(value: string): boolean {
   const v = value.trim();
@@ -129,6 +174,7 @@ function currentPeriod(): { year: number; month: number } {
 
 export function TeacherFinancePanel({ active = true }: { active?: boolean }) {
   const t = useT();
+  const { locale } = useLocale();
   const { logsApiBase, serverUrl, adminToken } = useAdminSettings();
   const initial = useMemo(() => currentPeriod(), []);
   const [year, setYear] = useState(String(initial.year));
@@ -475,7 +521,7 @@ export function TeacherFinancePanel({ active = true }: { active?: boolean }) {
         </div>
 
         {totals ? (
-          <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
             <div className="rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-700">
               <div className="text-text-muted">{t('dashboard.teacherFinance.totalRooms')}</div>
               <div className="font-semibold">{totals.roomsCount}</div>
@@ -485,8 +531,14 @@ export function TeacherFinancePanel({ active = true }: { active?: boolean }) {
               <div className="font-semibold">{totals.sessionsCount}</div>
             </div>
             <div className="rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-700">
-              <div className="text-text-muted">{t('dashboard.teacherFinance.totalHours')}</div>
-              <div className="font-semibold">{totals.hours}</div>
+              <div className="text-text-muted">{t('dashboard.teacherFinance.totalGroupHours')}</div>
+              <div className="font-semibold">{totals.groupHours ?? 0}</div>
+            </div>
+            <div className="rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-700">
+              <div className="text-text-muted">
+                {t('dashboard.teacherFinance.totalIndividualHours')}
+              </div>
+              <div className="font-semibold">{totals.individualHours ?? 0}</div>
             </div>
             <div className="rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-700">
               <div className="text-text-muted">{t('dashboard.teacherFinance.totalAmount')}</div>
@@ -534,7 +586,15 @@ export function TeacherFinancePanel({ active = true }: { active?: boolean }) {
                   </td>
                   <td className={tableCellClass}>{row.roomsCount}</td>
                   <td className={tableCellClass}>{row.sessionsCount}</td>
-                  <td className={tableCellClass}>{row.hours}</td>
+                  <td className={tableCellClass}>
+                    <div>{row.hours}</div>
+                    <div className="text-[11px] text-text-muted">
+                      {t('dashboard.teacherFinance.hoursSplit', {
+                        group: String(row.groupHours ?? 0),
+                        individual: String(row.individualHours ?? 0),
+                      })}
+                    </div>
+                  </td>
                   <td className={tableCellClass} onClick={(e) => e.stopPropagation()}>
                     <div className="flex min-w-[10.5rem] flex-col gap-1">
                       <div className="flex items-center gap-1">
@@ -647,76 +707,154 @@ export function TeacherFinancePanel({ active = true }: { active?: boolean }) {
                   ),
                 })}
               </p>
-            </div>
-            {!detailRow.rooms.length ? (
-              <p className="text-sm text-text-muted">
-                {t('dashboard.teacherFinance.noRooms')}
+              <p className="mt-1 text-sm text-text-muted">
+                {t('dashboard.teacherFinance.detailsHoursSplit', {
+                  groupHours: String(detailRow.groupHours ?? 0),
+                  individualHours: String(detailRow.individualHours ?? 0),
+                  individualSessions: String(detailRow.individualSessionsCount ?? 0),
+                })}
               </p>
-            ) : (
-              <TableShell>
-                <thead>
-                  <tr>
-                    <th className={tableHeadClass}>
-                      {t('dashboard.teacherFinance.roomName')}
-                    </th>
-                    <th className={tableHeadClass}>
-                      {t('dashboard.teacherFinance.scheduleDays')}
-                    </th>
-                    <th className={tableHeadClass}>
-                      {t('dashboard.teacherFinance.scheduleTime')}
-                    </th>
-                    <th className={tableHeadClass}>
-                      {t('dashboard.teacherFinance.sessionHours')}
-                    </th>
-                    <th className={tableHeadClass}>
-                      {t('dashboard.teacherFinance.sessions')}
-                    </th>
-                    <th className={tableHeadClass}>
-                      {t('dashboard.teacherFinance.hours')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detailRow.rooms.map((room) => {
-                    const days = (room.daysOfWeek ?? [])
-                      .map((d) => {
-                        const key = `dashboard.rooms.scheduleDays.${d}`;
-                        const label = t(key);
-                        return label === key ? d : label;
-                      })
-                      .join('، ');
-                    const time =
-                      room.timeFrom && room.timeTo
-                        ? `${room.timeFrom} – ${room.timeTo}`
-                        : '—';
-                    const roomLabel =
-                      room.nameAr || room.nameEn || room.id;
-                    return (
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-text-primary">
+                {t('dashboard.teacherFinance.typeGroup')}
+              </p>
+              {!detailRow.rooms.length ? (
+                <p className="text-sm text-text-muted">
+                  {t('dashboard.teacherFinance.noRooms')}
+                </p>
+              ) : (
+                <TableShell>
+                  <thead>
+                    <tr>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.memorizationType')}
+                      </th>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.roomName')}
+                      </th>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.scheduleDays')}
+                      </th>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.scheduleTime')}
+                      </th>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.sessionHours')}
+                      </th>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.sessions')}
+                      </th>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.hours')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detailRow.rooms.map((room) => {
+                      const days = (room.daysOfWeek ?? [])
+                        .map((d) => {
+                          const key = `dashboard.rooms.scheduleDays.${d}`;
+                          const label = t(key);
+                          return label === key ? d : label;
+                        })
+                        .join('، ');
+                      const time =
+                        room.timeFrom && room.timeTo
+                          ? `${room.timeFrom} – ${room.timeTo}`
+                          : '—';
+                      const roomLabel =
+                        room.nameAr || room.nameEn || room.id;
+                      return (
+                        <tr
+                          key={room.id}
+                          className="border-t border-gray-100 dark:border-gray-800"
+                        >
+                          <td className={tableCellClass}>
+                            {t('dashboard.teacherFinance.typeGroup')}
+                          </td>
+                          <td className={tableCellClass}>
+                            <div className="font-medium">{roomLabel}</div>
+                            {room.nameEn && room.nameAr && room.nameEn !== room.nameAr ? (
+                              <div className="text-xs text-text-muted">{room.nameEn}</div>
+                            ) : null}
+                          </td>
+                          <td className={tableCellClass}>{days || '—'}</td>
+                          <td className={tableCellClass}>{time}</td>
+                          <td className={tableCellClass}>
+                            {room.sessionHours ?? '—'}
+                          </td>
+                          <td className={tableCellClass}>
+                            {room.sessionsCount ?? '—'}
+                          </td>
+                          <td className={tableCellClass}>{room.hours ?? '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </TableShell>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-text-primary">
+                {t('dashboard.teacherFinance.typeIndividual')}
+              </p>
+              {!(detailRow.individualSessions ?? []).length ? (
+                <p className="text-sm text-text-muted">
+                  {t('dashboard.teacherFinance.noIndividualSessions')}
+                </p>
+              ) : (
+                <TableShell>
+                  <thead>
+                    <tr>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.memorizationType')}
+                      </th>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.student')}
+                      </th>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.startedAt')}
+                      </th>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.endedAt')}
+                      </th>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.duration')}
+                      </th>
+                      <th className={tableHeadClass}>
+                        {t('dashboard.teacherFinance.hours')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(detailRow.individualSessions ?? []).map((session) => (
                       <tr
-                        key={room.id}
+                        key={session.id}
                         className="border-t border-gray-100 dark:border-gray-800"
                       >
                         <td className={tableCellClass}>
-                          <div className="font-medium">{roomLabel}</div>
-                          {room.nameEn && room.nameAr && room.nameEn !== room.nameAr ? (
-                            <div className="text-xs text-text-muted">{room.nameEn}</div>
-                          ) : null}
+                          {t('dashboard.teacherFinance.typeIndividual')}
                         </td>
-                        <td className={tableCellClass}>{days || '—'}</td>
-                        <td className={tableCellClass}>{time}</td>
+                        <td className={tableCellClass}>{session.studentName}</td>
                         <td className={tableCellClass}>
-                          {room.sessionHours ?? '—'}
+                          {formatSessionWhen(session.startedAt, locale)}
                         </td>
                         <td className={tableCellClass}>
-                          {room.sessionsCount ?? '—'}
+                          {formatSessionWhen(session.endedAt, locale)}
                         </td>
-                        <td className={tableCellClass}>{room.hours ?? '—'}</td>
+                        <td className={tableCellClass}>
+                          {formatDuration(session.durationSeconds, locale)}
+                        </td>
+                        <td className={tableCellClass}>{session.hours}</td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </TableShell>
-            )}
+                    ))}
+                  </tbody>
+                </TableShell>
+              )}
+            </div>
             <div className="flex justify-end">
               <Btn variant="secondary" type="button" onClick={() => setDetailRow(null)}>
                 {t('common.cancel')}
@@ -738,6 +876,13 @@ export function TeacherFinancePanel({ active = true }: { active?: boolean }) {
                 name: settleRow.name,
                 month: t(`dashboard.teacherFinance.months.${month}`),
                 year,
+              })}
+            </p>
+            <p className="text-sm text-text-muted">
+              {t('dashboard.teacherFinance.detailsHoursSplit', {
+                groupHours: String(settleRow.groupHours ?? 0),
+                individualHours: String(settleRow.individualHours ?? 0),
+                individualSessions: String(settleRow.individualSessionsCount ?? 0),
               })}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -832,6 +977,18 @@ export function TeacherFinancePanel({ active = true }: { active?: boolean }) {
               {viewSettlement.hours} {t('dashboard.teacherFinance.hoursUnit')} ·{' '}
               {new Date(viewSettlement.settledAt).toLocaleString()}
             </p>
+            {viewSettlement.groupHours != null ||
+            viewSettlement.individualHours != null ? (
+              <p className="text-sm text-text-muted">
+                {t('dashboard.teacherFinance.detailsHoursSplit', {
+                  groupHours: String(viewSettlement.groupHours ?? 0),
+                  individualHours: String(viewSettlement.individualHours ?? 0),
+                  individualSessions: String(
+                    viewSettlement.individualSessionsCount ?? 0,
+                  ),
+                })}
+              </p>
+            ) : null}
             {viewSettlement.note ? (
               <p className="text-sm text-text-muted">{viewSettlement.note}</p>
             ) : null}

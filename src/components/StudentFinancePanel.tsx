@@ -17,7 +17,7 @@ import {
 } from '@/components/ui';
 
 type PaymentStatus = 'pending' | 'approved' | 'rejected';
-type HoursSource = 'attendance' | 'scheduled' | 'plan' | 'none';
+type HoursSource = 'attendance' | 'scheduled' | 'plan' | 'individual' | 'none';
 type StatusFilter = 'all' | PaymentStatus | 'none';
 
 type PaymentDto = {
@@ -86,6 +86,9 @@ type StudentFinanceRow = {
   };
   hours: number;
   hoursSource: HoursSource;
+  individualHours?: number;
+  quotaHours?: number | null;
+  memorizationMode?: string | null;
   scheduledHours: number;
   attendedHours: number;
 };
@@ -387,7 +390,11 @@ export function StudentFinancePanel({ active = true }: { active?: boolean }) {
                     </td>
                     <td className={tableCellClass}>
                       <div>
-                        {row.hours} {t('dashboard.studentFinance.hoursUnit')}
+                        {row.hoursSource === 'individual' &&
+                        row.quotaHours != null
+                          ? `${row.hours} / ${row.quotaHours}`
+                          : row.hours}{' '}
+                        {t('dashboard.studentFinance.hoursUnit')}
                       </div>
                       <div className="text-xs text-text-muted">
                         {hoursSourceLabel(row.hoursSource)}
@@ -485,6 +492,16 @@ export function StudentFinancePanel({ active = true }: { active?: boolean }) {
                   {detailRow.hours} ({hoursSourceLabel(detailRow.hoursSource)})
                 </div>
               </div>
+              {detailRow.hoursSource === 'individual' ? (
+                <div>
+                  <div className="text-text-muted">
+                    {t('dashboard.studentFinance.quotaHours')}
+                  </div>
+                  <div className="font-medium">
+                    {detailRow.quotaHours != null ? detailRow.quotaHours : '—'}
+                  </div>
+                </div>
+              ) : null}
               <div>
                 <div className="text-text-muted">{t('dashboard.studentFinance.room')}</div>
                 <div className="font-medium">
