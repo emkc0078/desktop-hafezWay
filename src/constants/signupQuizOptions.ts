@@ -44,6 +44,9 @@ export const SignupPlan = {
   TWO_HOURS_300: 'two_hours_300',
   THREE_HOURS_400: 'three_hours_400',
   EIGHT_HOURS_600: 'eight_hours_600',
+  TWO_HOURS_INDIVIDUAL_500: 'two_hours_individual_500',
+  FOUR_HOURS_INDIVIDUAL_800: 'four_hours_individual_800',
+  EIGHT_HOURS_INDIVIDUAL_1200: 'eight_hours_individual_1200',
 } as const;
 
 export const SignupUserType = {
