@@ -40,13 +40,15 @@ jobs:
       - name: Build web assets
         run: npm run build
 
+      # Dist is only kept for manual workflow_dispatch debugging — not every master push
+      # (avoids filling GitHub Actions artifact storage quota).
       - name: Upload dist artifact
-        if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v6
         with:
           name: desktop-dist-${{ github.sha }}
           path: dist
-          retention-days: 14
+          retention-days: 3
 
   # Packages + publishes a GitHub Release so installed apps (electron-updater) see the new version.
   release-windows:
@@ -106,9 +108,5 @@ jobs:
       - name: Print release link
         run: node scripts/print-release-link.cjs
 
-      - name: Upload local release folder
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-win-release-${{ github.sha }}
-          path: release
-          retention-days: 30
+      # Do not upload `release/` as an Actions artifact — electron-builder already
+      # publishes installers to the GitHub Release, and duplicate artifacts hit storage quota.
