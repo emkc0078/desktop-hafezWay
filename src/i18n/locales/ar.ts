@@ -340,6 +340,7 @@ export const ar: TranslationTree = {
       rejected: 'تم رفض طلب الدفع.',
       noPayments: 'لا توجد طلبات دفع.',
       openReceipt: 'فتح الصورة',
+      viewReceipt: 'معاينة الفاتورة',
       pendingBadge: '{count} قيد الانتظار',
       ordersTitle: 'طلبات الدفع',
       viewOrder: 'فتح الطلب',
