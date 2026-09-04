@@ -20,6 +20,7 @@ import { VideosPanel } from '@/components/VideosPanel';
 import { AdvertisementsPanel } from '@/components/AdvertisementsPanel';
 import { HomeFeaturedBookPanel } from '@/components/HomeFeaturedBookPanel';
 import { HomeHadithsPanel } from '@/components/HomeHadithsPanel';
+import { NewsletterSubscribersPanel } from '@/components/NewsletterSubscribersPanel';
 import { UserMonthlyAttendanceSection } from '@/components/UserMonthlyAttendanceSection';
 import { UserTeacherRatingsSection } from '@/components/UserTeacherRatingsSection';
 import {
@@ -82,6 +83,7 @@ type Tab =
   | 'advertisements'
   | 'homeFeaturedBook'
   | 'homeHadiths'
+  | 'newsletterSubscribers'
   | 'customerService';
 
 const AUTH_PROVIDER_GOOGLE = 'google';
@@ -130,22 +132,62 @@ function UserSignInBadge({
 
 function UserProfileBadge({
   incomplete,
+  missingFields,
+  onIncompleteClick,
   t,
 }: {
   incomplete: boolean;
-  t: (key: string) => string;
+  missingFields?: string[];
+  onIncompleteClick?: () => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }) {
+  const clickable = incomplete && typeof onIncompleteClick === 'function';
   return (
-    <span
+    <button
+      type="button"
+      disabled={!clickable}
+      onClick={(e) => {
+        if (!clickable) return;
+        e.stopPropagation();
+        onIncompleteClick();
+      }}
+      title={
+        incomplete
+          ? t('dashboard.users.profileIncompleteHint')
+          : t('dashboard.users.profileComplete')
+      }
       className={`inline-flex rounded-full px-2.5 py-1 text-sm font-medium ${
         incomplete
           ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200'
           : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
-      }`}
+      } ${clickable ? 'cursor-pointer underline-offset-2 hover:underline' : 'cursor-default'}`}
     >
-      {incomplete ? t('dashboard.users.profileIncomplete') : t('dashboard.users.profileComplete')}
-    </span>
+      {incomplete
+        ? `${t('dashboard.users.profileIncomplete')}${
+            missingFields && missingFields.length
+              ? ` (${missingFields.length})`
+              : ''
+          }`
+        : t('dashboard.users.profileComplete')}
+    </button>
   );
+}
+
+function signupMissingFieldsFromUser(user: Record<string, unknown>): string[] {
+  const raw = user.signupProfileMissingFields;
+  if (Array.isArray(raw)) {
+    return raw.map((f) => String(f)).filter(Boolean);
+  }
+  return [];
+}
+
+function missingFieldLabel(
+  field: string,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  const key = `dashboard.users.missingFields.${field}`;
+  const label = t(key);
+  return label === key ? field : label;
 }
 
 /** New member window: signup `createdAt` within the last 72 hours. */
@@ -678,6 +720,7 @@ export function AdminDashboardPage() {
   const [userSearch, setUserSearch] = useState('');
   const [userRole, setUserRole] = useState('');
   const [userTypeFilter, setUserTypeFilter] = useState('');
+  const [usersPageSize, setUsersPageSize] = useState(20);
   const [commentSearch, setCommentSearch] = useState('');
   const [studentReportSearch, setStudentReportSearch] = useState('');
   const [roomRatingSearch, setRoomRatingSearch] = useState('');
@@ -798,7 +841,7 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     setUsersState({ loading: true });
     try {
-      let url = `${serverUrl}/getUsers?page=${pages.users}&limit=20`;
+      let url = `${serverUrl}/getUsers?page=${pages.users}&limit=${usersPageSize}`;
       if (userSearch) url += `&search=${encodeURIComponent(userSearch)}`;
       if (userRole) url += `&role=${userRole}`;
       if (userTypeFilter) url += `&userType=${encodeURIComponent(userTypeFilter)}`;
@@ -809,7 +852,17 @@ export function AdminDashboardPage() {
       setUsersState({ loading: false, error: err.message });
       showMessage(t('dashboard.users.loadError', { message: err.message }), 'error');
     }
-  }, [adminToken, serverUrl, pages.users, userSearch, userRole, userTypeFilter, showMessage, t]);
+  }, [
+    adminToken,
+    serverUrl,
+    pages.users,
+    usersPageSize,
+    userSearch,
+    userRole,
+    userTypeFilter,
+    showMessage,
+    t,
+  ]);
 
   const loadComments = useCallback(async () => {
     if (!adminToken) return;
@@ -1193,6 +1246,10 @@ export function AdminDashboardPage() {
   const [userModalRooms, setUserModalRooms] = useState<Record<string, unknown>[]>([]);
   const [commentModal, setCommentModal] = useState<{ id: string } | null>(null);
   const [commentDetail, setCommentDetail] = useState<Record<string, unknown> | null>(null);
+  const [missingFieldsModal, setMissingFieldsModal] = useState<{
+    name: string;
+    fields: string[];
+  } | null>(null);
 
   const openUser = async (userId: string) => {
     if (!adminToken) return;
@@ -1792,34 +1849,68 @@ export function AdminDashboardPage() {
     }
   };
 
-  const renderPagination = (pagination: Pagination | undefined, type: keyof typeof pages) => {
-    if (!pagination) return null;
+  const renderPagination = (
+    pagination: Pagination | undefined,
+    type: keyof typeof pages,
+    options?: {
+      pageSize?: number;
+      onPageSizeChange?: (size: number) => void;
+      pageSizeChoices?: number[];
+    },
+  ) => {
+    if (!pagination && !options?.onPageSizeChange) return null;
     const change = (p: number) => {
       setPages((prev) => ({ ...prev, [type]: p }));
     };
+    const sizes = options?.pageSizeChoices ?? [10, 20, 50, 100];
     return (
       <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-        <Btn
-          variant="secondary"
-          disabled={!pagination.hasPrev}
-          onClick={() => change(pagination.page - 1)}
-        >
-          {t('common.previous')}
-        </Btn>
-        <span className="text-sm text-text-muted">
-          {t('common.pageOf', {
-            page: pagination.page,
-            pages: pagination.pages,
-            total: pagination.total,
-          })}
-        </span>
-        <Btn
-          variant="secondary"
-          disabled={!pagination.hasNext}
-          onClick={() => change(pagination.page + 1)}
-        >
-          {t('common.next')}
-        </Btn>
+        {options?.onPageSizeChange ? (
+          <label className="flex items-center gap-2 text-sm text-text-secondary">
+            <span>{t('common.perPage')}</span>
+            <Select
+              className="w-auto min-w-[4.5rem]"
+              value={String(options.pageSize ?? 20)}
+              onChange={(e) => {
+                const size = Number(e.target.value);
+                if (!Number.isFinite(size) || size < 1) return;
+                options.onPageSizeChange?.(size);
+                setPages((prev) => ({ ...prev, [type]: 1 }));
+              }}
+            >
+              {sizes.map((n) => (
+                <option key={n} value={String(n)}>
+                  {n}
+                </option>
+              ))}
+            </Select>
+          </label>
+        ) : null}
+        {pagination ? (
+          <>
+            <Btn
+              variant="secondary"
+              disabled={!pagination.hasPrev}
+              onClick={() => change(pagination.page - 1)}
+            >
+              {t('common.previous')}
+            </Btn>
+            <span className="text-sm text-text-muted">
+              {t('common.pageOf', {
+                page: pagination.page,
+                pages: pagination.pages,
+                total: pagination.total,
+              })}
+            </span>
+            <Btn
+              variant="secondary"
+              disabled={!pagination.hasNext}
+              onClick={() => change(pagination.page + 1)}
+            >
+              {t('common.next')}
+            </Btn>
+          </>
+        ) : null}
       </div>
     );
   };
@@ -1882,6 +1973,10 @@ export function AdminDashboardPage() {
           { id: 'advertisements', label: t('dashboard.tabs.advertisements') },
           { id: 'homeFeaturedBook', label: t('dashboard.tabs.homeFeaturedBook') },
           { id: 'homeHadiths', label: t('dashboard.tabs.homeHadiths') },
+          {
+            id: 'newsletterSubscribers',
+            label: t('dashboard.tabs.newsletterSubscribers'),
+          },
         ],
       },
       {
@@ -2172,14 +2267,30 @@ export function AdminDashboardPage() {
         {tab === 'users' && (
           <Card className="max-w-full overflow-x-hidden">
             <h2 className="mb-4 text-lg font-semibold">{t('dashboard.users.title')}</h2>
-            <div className="mb-4 flex flex-wrap gap-3">
+            <div className="mb-4 flex flex-wrap items-end gap-3">
               <Input
                 placeholder={t('dashboard.users.searchPlaceholder')}
                 value={userSearch}
                 onChange={(e) => setUserSearch(e.target.value)}
-                onBlur={() => void loadUsers()}
+                onBlur={() => {
+                  setPages((p) => ({ ...p, users: 1 }));
+                  void loadUsers();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setPages((p) => ({ ...p, users: 1 }));
+                    void loadUsers();
+                  }
+                }}
               />
-              <Select value={userRole} onChange={(e) => setUserRole(e.target.value)} onBlur={() => void loadUsers()}>
+              <Select
+                value={userRole}
+                onChange={(e) => {
+                  setUserRole(e.target.value);
+                  setPages((p) => ({ ...p, users: 1 }));
+                }}
+                onBlur={() => void loadUsers()}
+              >
                 <option value="">{t('dashboard.users.allRoles')}</option>
                 <option value="student">{t('dashboard.users.student')}</option>
                 <option value="teacher">{t('dashboard.users.teacher')}</option>
@@ -2198,6 +2309,25 @@ export function AdminDashboardPage() {
                 <option value={SignupUserType.FEMALE}>{t('dashboard.users.signupUserTypeFemale')}</option>
                 <option value={SignupUserType.CHILDREN}>{t('dashboard.users.signupUserTypeChildren')}</option>
               </Select>
+              <label className="flex flex-col gap-1 text-sm text-text-secondary">
+                <span>{t('common.perPage')}</span>
+                <Select
+                  className="min-w-[5rem]"
+                  value={String(usersPageSize)}
+                  onChange={(e) => {
+                    const size = Number(e.target.value);
+                    if (!Number.isFinite(size) || size < 1) return;
+                    setUsersPageSize(size);
+                    setPages((p) => ({ ...p, users: 1 }));
+                  }}
+                >
+                  {[10, 20, 50, 100].map((n) => (
+                    <option key={n} value={String(n)}>
+                      {n}
+                    </option>
+                  ))}
+                </Select>
+              </label>
               <Btn variant="info" onClick={() => void loadUsers()}>
                 {t('common.refresh')}
               </Btn>
@@ -2302,10 +2432,20 @@ export function AdminDashboardPage() {
                         <td className={tableCellClass}>
                           <UserSignInBadge provider={user.provider} t={t} />
                         </td>
-                        <td className={tableCellClass}>
+                        <td className={tableCellClass} onClick={(e) => e.stopPropagation()}>
                           <UserProfileBadge
                             incomplete={user.isSignupProfileIncomplete === true}
+                            missingFields={signupMissingFieldsFromUser(user)}
                             t={t}
+                            onIncompleteClick={() => {
+                              const fields = signupMissingFieldsFromUser(user);
+                              setMissingFieldsModal({
+                                name:
+                                  `${String(user.firstName ?? '')} ${String(user.lastName ?? '')}`.trim() ||
+                                  String(user.email ?? user.id),
+                                fields,
+                              });
+                            }}
                           />
                         </td>
                         <td className={`${tableCellClass} break-words text-base`}>
@@ -2391,7 +2531,11 @@ export function AdminDashboardPage() {
                     })}
                   </tbody>
                 </TableShell>
-                {renderPagination(usersData.pagination, 'users')}
+                {renderPagination(usersData.pagination, 'users', {
+                  pageSize: usersPageSize,
+                  onPageSizeChange: setUsersPageSize,
+                  pageSizeChoices: [10, 20, 50, 100],
+                })}
               </>
             )}
           </Card>
@@ -2804,6 +2948,7 @@ export function AdminDashboardPage() {
         {tab === 'advertisements' && <AdvertisementsPanel />}
         {tab === 'homeFeaturedBook' && <HomeFeaturedBookPanel />}
         {tab === 'homeHadiths' && <HomeHadithsPanel />}
+        {tab === 'newsletterSubscribers' && <NewsletterSubscribersPanel />}
         <div className={tab === 'customerService' ? 'block' : 'hidden'}>
           <CustomerServiceChatPanel
             serverUrl={serverUrl}
@@ -3063,9 +3208,31 @@ export function AdminDashboardPage() {
                 <strong>{t('dashboard.users.detailProfileStatus')}:</strong>
                 <UserProfileBadge
                   incomplete={userDetail.isSignupProfileIncomplete === true}
+                  missingFields={signupMissingFieldsFromUser(userDetail)}
                   t={t}
+                  onIncompleteClick={() => {
+                    setMissingFieldsModal({
+                      name:
+                        `${String(userDetail.firstName ?? '')} ${String(userDetail.lastName ?? '')}`.trim() ||
+                        String(userDetail.email ?? ''),
+                      fields: signupMissingFieldsFromUser(userDetail),
+                    });
+                  }}
                 />
               </p>
+              {userDetail.isSignupProfileIncomplete === true &&
+              signupMissingFieldsFromUser(userDetail).length > 0 ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 dark:border-amber-900 dark:bg-amber-950/40">
+                  <p className="mb-2 text-sm font-medium text-amber-900 dark:text-amber-100">
+                    {t('dashboard.users.missingFieldsTitle')}
+                  </p>
+                  <ul className="list-disc space-y-1 pe-5 ps-5 text-sm text-amber-950 dark:text-amber-50">
+                    {signupMissingFieldsFromUser(userDetail).map((field) => (
+                      <li key={field}>{missingFieldLabel(field, t)}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               <p>
                 <strong>{t('dashboard.users.phone')}:</strong> {String(userDetail.phone ?? '')}
               </p>
@@ -3859,6 +4026,32 @@ export function AdminDashboardPage() {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={!!missingFieldsModal}
+        onClose={() => setMissingFieldsModal(null)}
+        title={t('dashboard.users.missingFieldsTitle')}
+      >
+        {missingFieldsModal ? (
+          <div className="space-y-3 text-sm">
+            <p className="text-text-secondary">{missingFieldsModal.name}</p>
+            {missingFieldsModal.fields.length === 0 ? (
+              <p className="text-text-muted">{t('dashboard.users.missingFieldsEmpty')}</p>
+            ) : (
+              <ul className="list-disc space-y-1.5 pe-5 ps-5 text-text-primary">
+                {missingFieldsModal.fields.map((field) => (
+                  <li key={field}>{missingFieldLabel(field, t)}</li>
+                ))}
+              </ul>
+            )}
+            <div className="flex justify-end pt-2">
+              <Btn variant="secondary" type="button" onClick={() => setMissingFieldsModal(null)}>
+                {t('common.cancel')}
+              </Btn>
+            </div>
+          </div>
+        ) : null}
       </Modal>
 
       <Modal
