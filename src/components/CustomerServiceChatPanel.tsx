@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { io, type Socket } from 'socket.io-client';
 import { useLocale, useT } from '@/context/LocaleContext';
 import { adminFetchJson } from '@/utils/adminFetch';
 import {
@@ -104,7 +105,10 @@ function senderId(message: ChatMessage): string {
 function userName(user: UserRef, fallback: string): string {
   return (
     String(user.name ?? user.fullName ?? '').trim() ||
-    [String((user as { firstName?: string }).firstName ?? '').trim(), String((user as { lastName?: string }).lastName ?? '').trim()]
+    [
+      String((user as { firstName?: string }).firstName ?? '').trim(),
+      String((user as { lastName?: string }).lastName ?? '').trim(),
+    ]
       .filter(Boolean)
       .join(' ') ||
     String(user.email ?? '') ||
@@ -118,6 +122,31 @@ function lastMessageMeta(value: unknown): { id: string; sender: string } {
   return {
     id: entityId(message._id),
     sender: senderId(message),
+  };
+}
+
+function normalizeSocketMessage(raw: unknown, conversationId: string): ChatMessage | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const row = raw as Record<string, unknown>;
+  const id = entityId(row._id) || entityId(row.id);
+  if (!id) return null;
+  return {
+    _id: id,
+    conversationId: String(row.conversationId ?? conversationId),
+    senderId: (row.senderId as UserRef | string | undefined) ?? (row.sender as UserRef | string | undefined),
+    content: typeof row.content === 'string' ? row.content : undefined,
+    text: typeof row.text === 'string' ? row.text : undefined,
+    type: typeof row.type === 'string' ? row.type : 'text',
+    createdAt:
+      typeof row.createdAt === 'string'
+        ? row.createdAt
+        : row.createdAt
+          ? new Date(row.createdAt as string | number | Date).toISOString()
+          : undefined,
+    isRead: typeof row.isRead === 'boolean' ? row.isRead : undefined,
+    read: typeof row.read === 'boolean' ? row.read : undefined,
+    readAt: (row.readAt as string | null | undefined) ?? undefined,
+    readBy: Array.isArray(row.readBy) ? row.readBy : undefined,
   };
 }
 
@@ -142,11 +171,32 @@ export function CustomerServiceChatPanel({
   const [messagesError, setMessagesError] = useState('');
   const [composer, setComposer] = useState('');
   const [sending, setSending] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
   const markedMessageIds = useRef(new Set<string>());
   const alertedMessageIds = useRef(new Set<string>());
   const alertsPrimed = useRef(false);
   const messageSeededConversations = useRef(new Set<string>());
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const conversationsRef = useRef<Conversation[]>([]);
+  const selectedIdRef = useRef('');
+  const loadConversationsRef = useRef<() => Promise<void>>(async () => undefined);
+  const markIncomingReadRef = useRef<
+    | ((
+        conversationId: string,
+        incoming: ChatMessage[],
+        conversationUnreadCount: number,
+      ) => Promise<void>)
+    | null
+  >(null);
+  const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   useEffect(() => {
     unlockCustomerServiceAlertAudio();
@@ -184,9 +234,68 @@ export function CustomerServiceChatPanel({
     [locale],
   );
 
+  const bumpUnreadBadge = useCallback(
+    (rows: Conversation[]) => {
+      const unread = rows.reduce(
+        (total, conversation) => total + Math.max(0, Number(conversation.unreadCount) || 0),
+        0,
+      );
+      onUnreadCountChange?.(unread);
+    },
+    [onUnreadCountChange],
+  );
+
+  const applyRealtimeMessage = useCallback(
+    (conversationId: string, message: ChatMessage) => {
+      if (!conversationId || !message._id) return;
+      const fromAdmin = senderId(message) === adminUserId;
+
+      if (!fromAdmin) {
+        notifyIncomingMessages([message._id]);
+      } else {
+        seedIncomingMessages([message._id]);
+      }
+
+      if (selectedIdRef.current === conversationId) {
+        setMessages((current) => {
+          if (current.some((row) => row._id === message._id)) return current;
+          return [...current, message];
+        });
+        if (!fromAdmin) {
+          void markIncomingReadRef.current?.(conversationId, [message], 1);
+        }
+      }
+
+      setConversations((current) => {
+        const index = current.findIndex((row) => row._id === conversationId);
+        if (index < 0) {
+          // Unknown thread (new support chat) — refresh full inbox.
+          void loadConversationsRef.current();
+          return current;
+        }
+        const existing = current[index];
+        const nextUnread = fromAdmin
+          ? Math.max(0, Number(existing.unreadCount) || 0)
+          : selectedIdRef.current === conversationId
+            ? Math.max(0, Number(existing.unreadCount) || 0)
+            : Math.max(0, Number(existing.unreadCount) || 0) + 1;
+        const updated: Conversation = {
+          ...existing,
+          lastMessage: message,
+          lastMessageAt: message.createdAt ?? existing.lastMessageAt,
+          unreadCount: nextUnread,
+        };
+        const next = [updated, ...current.filter((_, i) => i !== index)];
+        bumpUnreadBadge(next);
+        return next;
+      });
+    },
+    [adminUserId, bumpUnreadBadge, notifyIncomingMessages, seedIncomingMessages],
+  );
+
   const loadConversations = useCallback(async () => {
     if (!adminToken) return;
-    setListLoading((current) => current || conversations.length === 0);
+    setListLoading((current) => current || conversationsRef.current.length === 0);
     setListError('');
     try {
       const params = new URLSearchParams({ page: '1', limit: '50' });
@@ -198,18 +307,13 @@ export function CustomerServiceChatPanel({
       }>(`${apiBase}/api/chat/support/conversations?${params}`, adminToken);
       const next = response.data?.conversations ?? response.conversations ?? [];
       setConversations(next);
-      const unread = next.reduce(
-        (total, conversation) => total + Math.max(0, Number(conversation.unreadCount) || 0),
-        0,
-      );
-      onUnreadCountChange?.(unread);
+      bumpUnreadBadge(next);
 
       const incomingLastMessageIds = next
         .map((conversation) => {
           const meta = lastMessageMeta(conversation.lastMessage);
           if (!meta.id) return '';
           if (meta.sender && meta.sender === adminUserId) return '';
-          // Prefer unread threads; also catch brand-new last messages when sender is known.
           if (Math.max(0, Number(conversation.unreadCount) || 0) > 0 || meta.sender) {
             return meta.id;
           }
@@ -219,7 +323,7 @@ export function CustomerServiceChatPanel({
       notifyIncomingMessages(incomingLastMessageIds);
       alertsPrimed.current = true;
 
-      if (selectedId && !next.some((conversation) => conversation._id === selectedId)) {
+      if (selectedIdRef.current && !next.some((conversation) => conversation._id === selectedIdRef.current)) {
         setSelectedId('');
         setMessages([]);
       }
@@ -232,14 +336,16 @@ export function CustomerServiceChatPanel({
     adminToken,
     adminUserId,
     apiBase,
+    bumpUnreadBadge,
     categoryFilter,
-    conversations.length,
     notifyIncomingMessages,
-    onUnreadCountChange,
     search,
-    selectedId,
     t,
   ]);
+
+  useEffect(() => {
+    loadConversationsRef.current = loadConversations;
+  }, [loadConversations]);
 
   const markIncomingRead = useCallback(
     async (conversationId: string, incoming: ChatMessage[], conversationUnreadCount: number) => {
@@ -284,18 +390,23 @@ export function CustomerServiceChatPanel({
             unreadIds.includes(message._id) ? { ...message, isRead: true } : message,
           ),
         );
-        setConversations((current) =>
-          current.map((conversation) =>
+        setConversations((current) => {
+          const next = current.map((conversation) =>
             conversation._id === conversationId ? { ...conversation, unreadCount: 0 } : conversation,
-          ),
-        );
-        void loadConversations();
+          );
+          bumpUnreadBadge(next);
+          return next;
+        });
       } catch {
         unreadIds.forEach((id) => markedMessageIds.current.delete(id));
       }
     },
-    [adminToken, adminUserId, apiBase, loadConversations],
+    [adminToken, adminUserId, apiBase, bumpUnreadBadge],
   );
+
+  useEffect(() => {
+    markIncomingReadRef.current = markIncomingRead;
+  }, [markIncomingRead]);
 
   const selectedUnreadCount = Math.max(0, Number(selectedConversation?.unreadCount) || 0);
 
@@ -342,21 +453,66 @@ export function CustomerServiceChatPanel({
     t,
   ]);
 
+  // Live socket: admins auto-join support:admins on connect.
   useEffect(() => {
-    const timeout = window.setTimeout(() => void loadConversations(), 250);
-    const interval = window.setInterval(() => void loadConversations(), 5000);
+    if (!adminToken || !apiBase) return;
+
+    const socket = io(apiBase, {
+      transports: ['websocket', 'polling'],
+      // Backend handshake expects lowercase "user <token>" then verifies admin JWT.
+      auth: { authorization: `user ${adminToken}` },
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 8000,
+    });
+    socketRef.current = socket;
+
+    const onConnect = () => setSocketConnected(true);
+    const onDisconnect = () => setSocketConnected(false);
+    const onNewMessage = (payload: { conversationId?: string; message?: unknown }) => {
+      const conversationId = String(payload?.conversationId ?? '').trim();
+      const message = normalizeSocketMessage(payload?.message, conversationId);
+      if (!conversationId || !message) {
+        void loadConversationsRef.current();
+        return;
+      }
+      applyRealtimeMessage(conversationId, message);
+    };
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    socket.on('chat:newMessage', onNewMessage);
+    socket.on('chat:messageSent', onNewMessage);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      socket.off('chat:newMessage', onNewMessage);
+      socket.off('chat:messageSent', onNewMessage);
+      socket.disconnect();
+      socketRef.current = null;
+      setSocketConnected(false);
+    };
+  }, [adminToken, apiBase, applyRealtimeMessage]);
+
+  // Fallback polling (slower when socket is live).
+  useEffect(() => {
+    const timeout = window.setTimeout(() => void loadConversations(), 150);
+    const intervalMs = socketConnected ? 20000 : 4000;
+    const interval = window.setInterval(() => void loadConversations(), intervalMs);
     return () => {
       window.clearTimeout(timeout);
       window.clearInterval(interval);
     };
-  }, [loadConversations]);
+  }, [loadConversations, socketConnected]);
 
   useEffect(() => {
     if (!active || !selectedId) return;
     void loadMessages();
-    const interval = window.setInterval(() => void loadMessages(), 3000);
+    const intervalMs = socketConnected ? 15000 : 3000;
+    const interval = window.setInterval(() => void loadMessages(), intervalMs);
     return () => window.clearInterval(interval);
-  }, [active, loadMessages, selectedId]);
+  }, [active, loadMessages, selectedId, socketConnected]);
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -383,9 +539,16 @@ export function CustomerServiceChatPanel({
       );
       const sent = 'data' in response && response.data ? response.data : (response as ChatMessage);
       setComposer('');
-      if (sent?._id) setMessages((current) => [...current, sent]);
-      await loadMessages();
-      void loadConversations();
+      if (sent?._id) {
+        applyRealtimeMessage(selectedId, {
+          ...sent,
+          conversationId: selectedId,
+        });
+      }
+      if (!socketConnected) {
+        await loadMessages();
+        void loadConversations();
+      }
     } catch (error) {
       setMessagesError(error instanceof Error ? error.message : t('common.error'));
     } finally {
@@ -402,12 +565,32 @@ export function CustomerServiceChatPanel({
           }`}
         >
           <div className="border-b border-gray-200 p-4 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-text-primary dark:text-gray-100">
-              {t('dashboard.customerService.title')}
-            </h2>
-            <p className="mt-1 text-xs text-text-muted dark:text-gray-400">
-              {t('dashboard.customerService.subtitle')}
-            </p>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-semibold text-text-primary dark:text-gray-100">
+                  {t('dashboard.customerService.title')}
+                </h2>
+                <p className="mt-1 text-xs text-text-muted dark:text-gray-400">
+                  {t('dashboard.customerService.subtitle')}
+                </p>
+              </div>
+              <span
+                className={`mt-1 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  socketConnected
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'
+                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200'
+                }`}
+                title={
+                  socketConnected
+                    ? t('dashboard.customerService.liveOn')
+                    : t('dashboard.customerService.liveOff')
+                }
+              >
+                {socketConnected
+                  ? t('dashboard.customerService.liveOn')
+                  : t('dashboard.customerService.liveOff')}
+              </span>
+            </div>
             <Input
               className="mt-3"
               value={search}
