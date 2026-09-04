@@ -340,6 +340,7 @@ export const en: TranslationTree = {
       rejected: 'Payment request rejected.',
       noPayments: 'No payment requests.',
       openReceipt: 'Open image',
+      viewReceipt: 'Preview receipt',
       pendingBadge: '{count} pending',
       ordersTitle: 'Payment orders',
       viewOrder: 'Open order',

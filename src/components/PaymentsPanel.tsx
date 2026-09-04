@@ -69,11 +69,22 @@ type Pagination = {
   hasNext?: boolean;
 };
 
-function receiptUrl(serverUrl: string, path: string | null): string | null {
+function receiptUrl(serverUrl: string, path: string | null | undefined): string | null {
   if (!path) return null;
-  if (path.startsWith('http')) return path;
+  const value = path.trim();
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:')) {
+    return value;
+  }
   const base = serverUrl.replace(/\/$/, '');
-  return path.startsWith('uploads/') ? `${base}/${path}` : `${base}/uploads/${path}`;
+  if (value.startsWith('/')) return `${base}${value}`;
+  // Stored as "uploads/Payments/…" or "Payments/…" depending on upload path.
+  if (value.startsWith('uploads/')) return `${base}/${value}`;
+  if (value.includes('/uploads/')) {
+    const idx = value.indexOf('/uploads/');
+    return `${base}${value.slice(idx)}`;
+  }
+  return `${base}/uploads/${value.replace(/^\/+/, '')}`;
 }
 
 function formatWhen(iso: string | null | undefined): string {
@@ -117,6 +128,7 @@ export function PaymentsPanel({
     instructionsEn: '',
   });
   const [selected, setSelected] = useState<PaymentRow | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<PaymentRow | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [rejectOpen, setRejectOpen] = useState(false);
   const searchRef = useRef(search);
@@ -317,6 +329,9 @@ export function PaymentsPanel({
   ];
 
   const selectedReceipt = selected ? receiptUrl(serverUrl, selected.receiptImage) : null;
+  const lightboxReceipt = receiptPreview
+    ? receiptUrl(serverUrl, receiptPreview.receiptImage)
+    : null;
 
   return (
     <div className={active ? 'space-y-6' : 'hidden'}>
@@ -387,6 +402,7 @@ export function PaymentsPanel({
                 <th className={tableHeadClass}>{t('dashboard.payments.student')}</th>
                 <th className={tableHeadClass}>{t('dashboard.payments.amount')}</th>
                 <th className={tableHeadClass}>{t('dashboard.payments.transfer')}</th>
+                <th className={tableHeadClass}>{t('dashboard.payments.receipt')}</th>
                 <th className={tableHeadClass}>{t('dashboard.payments.submitted')}</th>
                 <th className={tableHeadClass}>{t('dashboard.payments.status')}</th>
                 <th className={tableHeadClass}>{t('dashboard.payments.actions')}</th>
@@ -409,6 +425,19 @@ export function PaymentsPanel({
                     <div className="text-xs text-text-muted">{row.planKey}</div>
                   </td>
                   <td className={tableCellClass}>{row.transferNumber || '—'}</td>
+                  <td className={tableCellClass}>
+                    {row.receiptImage ? (
+                      <Btn
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setReceiptPreview(row)}
+                      >
+                        {t('dashboard.payments.viewReceipt')}
+                      </Btn>
+                    ) : (
+                      <span className="text-text-muted">{t('dashboard.payments.noReceipt')}</span>
+                    )}
+                  </td>
                   <td className={tableCellClass}>{formatWhen(row.submittedAt)}</td>
                   <td className={tableCellClass}>
                     <span
@@ -580,15 +609,43 @@ export function PaymentsPanel({
               ) : null}
             </div>
             <div>
-              <p className="mb-2 text-sm font-medium">{t('dashboard.payments.receiptPreview')}</p>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium">{t('dashboard.payments.receiptPreview')}</p>
+                {selectedReceipt ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Btn
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setReceiptPreview(selected)}
+                    >
+                      {t('dashboard.payments.viewReceipt')}
+                    </Btn>
+                    <a
+                      href={selectedReceipt}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex"
+                    >
+                      <Btn type="button" variant="info">
+                        {t('dashboard.payments.openReceipt')}
+                      </Btn>
+                    </a>
+                  </div>
+                ) : null}
+              </div>
               {selectedReceipt ? (
-                <a href={selectedReceipt} target="_blank" rel="noreferrer">
+                <button
+                  type="button"
+                  className="block w-full cursor-zoom-in rounded-lg border bg-gray-50 p-2 text-left dark:border-gray-700 dark:bg-gray-900/40"
+                  onClick={() => setReceiptPreview(selected)}
+                  title={t('dashboard.payments.viewReceipt')}
+                >
                   <img
                     src={selectedReceipt}
                     alt={t('dashboard.payments.receipt')}
-                    className="max-h-80 w-full rounded-lg border object-contain dark:border-gray-700"
+                    className="max-h-80 w-full rounded-md object-contain"
                   />
-                </a>
+                </button>
               ) : (
                 <p className="text-sm text-text-muted">{t('dashboard.payments.noReceipt')}</p>
               )}
@@ -609,6 +666,45 @@ export function PaymentsPanel({
                 </Btn>
               </div>
             ) : null}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(receiptPreview)}
+        onClose={() => setReceiptPreview(null)}
+        title={t('dashboard.payments.receiptPreview')}
+        maxWidthClass="max-w-5xl"
+      >
+        {receiptPreview ? (
+          <div className="space-y-3">
+            <p className="text-sm text-text-muted">
+              {studentName(receiptPreview)}
+              {receiptPreview.user?.email ? ` · ${receiptPreview.user.email}` : ''}
+            </p>
+            {lightboxReceipt ? (
+              <>
+                <div className="overflow-auto rounded-lg border bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-900/40">
+                  <img
+                    src={lightboxReceipt}
+                    alt={t('dashboard.payments.receipt')}
+                    className="mx-auto max-h-[75vh] w-auto max-w-full object-contain"
+                  />
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <a href={lightboxReceipt} target="_blank" rel="noreferrer" className="inline-flex">
+                    <Btn type="button" variant="info">
+                      {t('dashboard.payments.openReceipt')}
+                    </Btn>
+                  </a>
+                  <Btn type="button" variant="secondary" onClick={() => setReceiptPreview(null)}>
+                    {t('common.close')}
+                  </Btn>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-text-muted">{t('dashboard.payments.noReceipt')}</p>
+            )}
           </div>
         ) : null}
       </Modal>
