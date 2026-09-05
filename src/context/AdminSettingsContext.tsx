@@ -24,6 +24,19 @@ const REMOTE_SERVER = 'http://194.135.91.75:3000';
 /** Web app that serves `/livekit/:roomId` (often different port from API, e.g. 8081 vs 3000). */
 const DEFAULT_LIVE_APP = 'http://localhost:8081';
 
+function normalizeServerUrl(url: string): string {
+  return url.replace(/\/$/, '');
+}
+
+function initialServerUrl(): string {
+  if (typeof localStorage === 'undefined') return REMOTE_SERVER;
+  const stored = localStorage.getItem(STORAGE_SERVER);
+  if (!stored) return REMOTE_SERVER;
+  const normalized = normalizeServerUrl(stored);
+  if (normalized === DEFAULT_SERVER || normalized === REMOTE_SERVER) return normalized;
+  return REMOTE_SERVER;
+}
+
 function readPersisted(key: string): string {
   if (typeof localStorage === 'undefined') return '';
   return localStorage.getItem(key) || sessionStorage.getItem(key) || '';
@@ -81,10 +94,7 @@ export type AdminSettings = {
 const AdminSettingsContext = createContext<AdminSettings | null>(null);
 
 export function AdminSettingsProvider({ children }: { children: ReactNode }) {
-  const [serverUrl, setServerUrlState] = useState(() => {
-    if (typeof localStorage === 'undefined') return DEFAULT_SERVER;
-    return localStorage.getItem(STORAGE_SERVER) || DEFAULT_SERVER;
-  });
+  const [serverUrl, setServerUrlState] = useState(initialServerUrl);
   const [liveAppUrl, setLiveAppUrlState] = useState(() => {
     if (typeof localStorage === 'undefined') return DEFAULT_LIVE_APP;
     return localStorage.getItem(STORAGE_LIVE_APP) || DEFAULT_LIVE_APP;
@@ -108,8 +118,9 @@ export function AdminSettingsProvider({ children }: { children: ReactNode }) {
   }, [darkMode]);
 
   const setServerUrl = useCallback((url: string) => {
-    setServerUrlState(url);
-    localStorage.setItem(STORAGE_SERVER, url);
+    const next = normalizeServerUrl(url);
+    setServerUrlState(next);
+    localStorage.setItem(STORAGE_SERVER, next);
   }, []);
 
   const setLiveAppUrl = useCallback((url: string) => {

@@ -28,11 +28,28 @@ elif [[ "$DB_ENGINE" == "postgres" ]]; then
 fi
 
 # --- Config / secrets on disk (never commit these to Git) ---
+# These are the files you need to stand up the same stack on another Linux host.
+# Mongo dump is written above; also copy images from the API backup tab.
+STAGING_BACKEND_DIR="${STAGING_BACKEND_DIR:-/var/www/back-hafezWay-dev}"
+STAGING_FRONTEND_DIR="${STAGING_FRONTEND_DIR:-/var/www/front-hafezWay-dev}"
+
 CONFIG_PATHS=()
 [[ -f "$BACKEND_DIR/.env" ]] && CONFIG_PATHS+=("$BACKEND_DIR/.env")
 [[ -f "$FRONTEND_DIR/.env" ]] && CONFIG_PATHS+=("$FRONTEND_DIR/.env")
 [[ -f "$FRONTEND_DIR/.env.production" ]] && CONFIG_PATHS+=("$FRONTEND_DIR/.env.production")
+[[ -f "$STAGING_BACKEND_DIR/.env" ]] && CONFIG_PATHS+=("$STAGING_BACKEND_DIR/.env")
+[[ -f "$STAGING_FRONTEND_DIR/.env" ]] && CONFIG_PATHS+=("$STAGING_FRONTEND_DIR/.env")
+[[ -f "$STAGING_FRONTEND_DIR/.env.production" ]] && CONFIG_PATHS+=("$STAGING_FRONTEND_DIR/.env.production")
 [[ -f "$NGINX_SITE" ]] && CONFIG_PATHS+=("$NGINX_SITE")
+[[ -f /etc/nginx/nginx.conf ]] && CONFIG_PATHS+=("/etc/nginx/nginx.conf")
+[[ -d /etc/nginx/sites-available ]] && CONFIG_PATHS+=("/etc/nginx/sites-available")
+[[ -d /etc/nginx/sites-enabled ]] && CONFIG_PATHS+=("/etc/nginx/sites-enabled")
+[[ -d /etc/nginx/conf.d ]] && CONFIG_PATHS+=("/etc/nginx/conf.d")
+[[ -d /etc/nginx/snippets ]] && CONFIG_PATHS+=("/etc/nginx/snippets")
+[[ -f /etc/systemd/system/node-backend.service ]] && CONFIG_PATHS+=("/etc/systemd/system/node-backend.service")
+[[ -f /etc/systemd/system/node-backend-dev.service ]] && CONFIG_PATHS+=("/etc/systemd/system/node-backend-dev.service")
+[[ -f /etc/sudoers.d/hafezway-deploy ]] && CONFIG_PATHS+=("/etc/sudoers.d/hafezway-deploy")
+[[ -d /etc/letsencrypt ]] && CONFIG_PATHS+=("/etc/letsencrypt")
 
 if ((${#CONFIG_PATHS[@]} > 0)); then
   tar -czf "$BACKUP_DIR/configs_${DATE}.tar.gz" "${CONFIG_PATHS[@]}"

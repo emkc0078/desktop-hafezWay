@@ -9,7 +9,7 @@ import {
   STORAGE_REMEMBERED_EMAIL,
 } from '@/context/AdminSettingsContext';
 import { useT } from '@/context/LocaleContext';
-import { loginWithPassword, verifyAdministratorAccess } from '@/utils/authLogin';
+import { loginWithPassword, verifyAdministratorAccess, isLocalhostApi } from '@/utils/authLogin';
 import { Btn, Field, Input } from '@/components/ui';
 
 type Props = {
@@ -40,7 +40,6 @@ export function AdminAuthBar({ showTestHint }: Props) {
     adminName,
     setAdminSession,
     clearToken,
-    logsApiBase,
   } = useAdminSettings();
 
   const [email, setEmail] = useState(() => readRememberedEmail());
@@ -65,8 +64,9 @@ export function AdminAuthBar({ showTestHint }: Props) {
     }
     setBusy(true);
     try {
-      const session = await loginWithPassword(serverUrl, email, password);
-      await verifyAdministratorAccess(logsApiBase, session.accessToken);
+      const apiHost = serverUrl.replace(/\/$/, '');
+      const session = await loginWithPassword(apiHost, email, password);
+      await verifyAdministratorAccess(`${apiHost}/api`, session.accessToken);
       setAdminSession(session.accessToken, session.name || email.trim(), {
         rememberMe,
       });
@@ -266,6 +266,12 @@ export function AdminAuthBar({ showTestHint }: Props) {
               </Btn>
               <span className="text-xs text-text-muted">{t('auth.loginHint')}</span>
             </div>
+            <p className="font-mono text-xs text-text-muted">
+              {t('auth.loginTarget', { url: `${serverUrl.replace(/\/$/, '')}/auth/login` })}
+            </p>
+            {isLocalhostApi(serverUrl) ? (
+              <p className="text-sm text-amber-700 dark:text-amber-300">{t('auth.localApiHint')}</p>
+            ) : null}
             {showTestHint ? (
               <p className="text-xs text-text-muted">{t('auth.logsHint')}</p>
             ) : null}

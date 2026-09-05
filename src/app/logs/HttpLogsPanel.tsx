@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAdminSettings } from '@/context/AdminSettingsContext';
 import { useT } from '@/context/LocaleContext';
 import { adminFetchJson } from '@/utils/adminFetch';
@@ -227,6 +227,12 @@ export function HttpLogsPanel() {
     },
     [adminToken, buildLogsUrl, limitFilter, t],
   );
+
+  useEffect(() => {
+    if (!adminToken) return;
+    void loadStats();
+    void loadLogs(0);
+  }, [adminToken, loadStats, loadLogs]);
 
   const openDetail = async (logId: number) => {
     if (!adminToken) return;
