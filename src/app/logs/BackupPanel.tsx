@@ -21,7 +21,16 @@ type MessageType = 'success' | 'error' | 'info';
 
 type DestinationMode = 'saveServer' | 'saveServerAndLocal';
 
-type ConfigKind = 'nginx' | 'env' | 'both';
+type ConfigKind = 'nginx' | 'env' | 'both' | 'migrate';
+
+type BackupPathProbe = {
+  id: string;
+  path: string;
+  exists: boolean;
+  readable: boolean;
+  isFile: boolean;
+  isDir: boolean;
+};
 
 type EnvPushTarget = 'backend' | 'frontend' | 'both';
 
@@ -51,6 +60,7 @@ type ConfigLocations = {
   frontendEnvExists: boolean;
   frontendEnvProductionPath: string | null;
   frontendEnvProductionExists: boolean;
+  extraPaths?: BackupPathProbe[];
 };
 
 type CleanupStats = {
@@ -315,22 +325,42 @@ export function BackupPanel() {
       }
       setBusy(`config-create-${kind}`);
       try {
-        const res = await adminFetchJson<ApiEnvelope<{ fileName: string; size?: number }>>(
-          `${backupBase}/config/create`,
-          adminToken,
-          { method: 'POST', body: JSON.stringify({ kind }) },
-        );
+        const res = await adminFetchJson<
+          ApiEnvelope<{ fileName: string; size?: number; included?: number; skipped?: number }>
+        >(`${backupBase}/config/create`, adminToken, {
+          method: 'POST',
+          body: JSON.stringify({ kind }),
+        });
         const fileName = res.data?.fileName;
+        const included = res.data?.included;
+        const skipped = res.data?.skipped;
         await loadConfigSection();
+        const counts =
+          included != null
+            ? t('backup.configCounts', {
+                included: String(included),
+                skipped: String(skipped ?? 0),
+              })
+            : '';
         if (withDownload && fileName) {
           await downloadBackupBlob(
             `${backupBase}/config/download/${encodeURIComponent(fileName)}`,
             adminToken,
             fileName,
           );
-          showMessage(t('backup.configDownloaded', { fileName }), 'success');
+          showMessage(
+            counts
+              ? t('backup.configDownloadedCounts', { fileName, counts })
+              : t('backup.configDownloaded', { fileName }),
+            'success',
+          );
         } else if (fileName) {
-          showMessage(t('backup.configCreated', { fileName }), 'success');
+          showMessage(
+            counts
+              ? t('backup.configCreatedCounts', { fileName, counts })
+              : t('backup.configCreated', { fileName }),
+            'success',
+          );
         } else {
           showMessage(t('backup.couldNotCreateConfig'), 'error');
         }
@@ -660,6 +690,12 @@ export function BackupPanel() {
     }
   };
 
+  const extraPathLabel = (id: string): string => {
+    const key = `backup.extraPath.${id}`;
+    const label = t(key);
+    return label === key ? id : label;
+  };
+
   const isDisabled = !adminToken || busy !== null || pulling;
 
   return (
@@ -778,6 +814,15 @@ export function BackupPanel() {
           {t('backup.nginxEnvTitle')}
         </h2>
         <p className="mt-1 text-sm text-text-secondary dark:text-gray-300">{t('backup.nginxEnvHint')}</p>
+        <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100">
+          <p className="font-medium">{t('backup.migrateTitle')}</p>
+          <p className="mt-1">{t('backup.migrateHint')}</p>
+          <ol className="mt-2 list-decimal space-y-1 ps-5">
+            <li>{t('backup.migrateStep1')}</li>
+            <li>{t('backup.migrateStep2')}</li>
+            <li>{t('backup.migrateStep3')}</li>
+          </ol>
+        </div>
 
         <div className="mt-4 space-y-4">
           <section>
@@ -854,6 +899,29 @@ export function BackupPanel() {
                     </dd>
                   </div>
                 ) : null}
+                {configLocations.extraPaths && configLocations.extraPaths.length > 0 ? (
+                  <div>
+                    <dt className="font-medium">{t('backup.linuxMigratePaths')}</dt>
+                    <dd className="mt-2 space-y-2">
+                      {configLocations.extraPaths.map((row) => (
+                        <div key={row.id}>
+                          <p className="text-sm">{extraPathLabel(row.id)}</p>
+                          <p className="font-mono text-xs">{row.path}</p>
+                          <PathStatus
+                            ok={row.exists && row.readable}
+                            label={
+                              row.exists && row.readable
+                                ? t('backup.readable')
+                                : row.exists
+                                  ? t('backup.notReadable')
+                                  : t('backup.missing')
+                            }
+                          />
+                        </div>
+                      ))}
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
             ) : (
               <p className="mt-2 text-sm text-text-muted">{t('backup.pathsNotLoaded')}</p>
@@ -885,6 +953,9 @@ export function BackupPanel() {
         </div>
 
         <div className="mt-6 flex flex-wrap gap-2">
+          <Btn disabled={isDisabled} onClick={() => void createConfigBackup('migrate', shouldDownload)}>
+            {shouldDownload ? t('backup.backupMigrateDownload') : t('backup.backupMigrate')}
+          </Btn>
           <Btn disabled={isDisabled} onClick={() => void createConfigBackup('nginx', shouldDownload)}>
             {shouldDownload ? t('backup.backupNginxDownload') : t('backup.backupNginx')}
           </Btn>

@@ -97,6 +97,17 @@ function resolveUserSignInKind(provider: unknown): 'google' | 'twitter' | 'faceb
   return 'email';
 }
 
+function userMatchesSignInFilter(provider: unknown, filter: string): boolean {
+  if (!filter) return true;
+  const kind = resolveUserSignInKind(provider);
+  const normalized = filter.toLowerCase();
+  if (normalized === 'twitter' || normalized === 'x') return kind === 'twitter';
+  if (normalized === 'email' || normalized === 'system' || normalized === 'local') {
+    return kind === 'email';
+  }
+  return kind === normalized;
+}
+
 const SIGN_IN_BADGE_CLASS: Record<ReturnType<typeof resolveUserSignInKind>, string> = {
   google: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200',
   twitter: 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900',
@@ -720,6 +731,7 @@ export function AdminDashboardPage() {
   const [userSearch, setUserSearch] = useState('');
   const [userRole, setUserRole] = useState('');
   const [userTypeFilter, setUserTypeFilter] = useState('');
+  const [userSignInFilter, setUserSignInFilter] = useState('');
   const [usersPageSize, setUsersPageSize] = useState(20);
   const [commentSearch, setCommentSearch] = useState('');
   const [studentReportSearch, setStudentReportSearch] = useState('');
@@ -845,6 +857,7 @@ export function AdminDashboardPage() {
       if (userSearch) url += `&search=${encodeURIComponent(userSearch)}`;
       if (userRole) url += `&role=${userRole}`;
       if (userTypeFilter) url += `&userType=${encodeURIComponent(userTypeFilter)}`;
+      if (userSignInFilter) url += `&provider=${encodeURIComponent(userSignInFilter)}`;
       const data = await adminFetchJson<{ data: unknown }>(url, adminToken);
       setUsersState({ loading: false, data: data.data });
     } catch (e) {
@@ -860,6 +873,7 @@ export function AdminDashboardPage() {
     userSearch,
     userRole,
     userTypeFilter,
+    userSignInFilter,
     showMessage,
     t,
   ]);
@@ -1921,6 +1935,9 @@ export function AdminDashboardPage() {
   const usersData = usersState.data as
     | { users?: Record<string, unknown>[]; pagination?: Pagination }
     | undefined;
+  const visibleUsers = (usersData?.users ?? []).filter((user) =>
+    userMatchesSignInFilter(user.provider, userSignInFilter),
+  );
   const commentsData = commentsState.data as
     | { comments?: Record<string, unknown>[]; pagination?: Pagination }
     | undefined;
@@ -2309,6 +2326,21 @@ export function AdminDashboardPage() {
                 <option value={SignupUserType.FEMALE}>{t('dashboard.users.signupUserTypeFemale')}</option>
                 <option value={SignupUserType.CHILDREN}>{t('dashboard.users.signupUserTypeChildren')}</option>
               </Select>
+              <Select
+                value={userSignInFilter}
+                onChange={(e) => {
+                  setUserSignInFilter(e.target.value);
+                  setPages((p) => ({ ...p, users: 1 }));
+                }}
+                onBlur={() => void loadUsers()}
+                title={t('dashboard.users.cols.signIn')}
+              >
+                <option value="">{t('dashboard.users.allSignInTypes')}</option>
+                <option value="google">{t('dashboard.users.signInGoogle')}</option>
+                <option value="twitter">{t('dashboard.users.signInX')}</option>
+                <option value="facebook">{t('dashboard.users.signInFacebook')}</option>
+                <option value="email">{t('dashboard.users.signInEmail')}</option>
+              </Select>
               <label className="flex flex-col gap-1 text-sm text-text-secondary">
                 <span>{t('common.perPage')}</span>
                 <Select
@@ -2336,7 +2368,7 @@ export function AdminDashboardPage() {
               <p className="text-text-muted">{t('common.loading')}</p>
             ) : usersState.error ? (
               <p className="text-red-600">{usersState.error}</p>
-            ) : !usersData?.users?.length ? (
+            ) : !usersData || !visibleUsers.length ? (
               <p className="text-text-muted">{t('dashboard.users.noUsers')}</p>
             ) : (
               <>
@@ -2376,7 +2408,7 @@ export function AdminDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {usersData.users.map((user) => {
+                    {visibleUsers.map((user) => {
                       const newMember = isNewMember(user.createdAt);
                       return (
                         <tr
@@ -2517,7 +2549,10 @@ export function AdminDashboardPage() {
                               variant="danger"
                               className="!px-2 !py-1 text-xs"
                               onClick={() => {
-                                if (confirm(t('dashboard.users.confirmDelete')))
+                                const name =
+                                  `${String(user.firstName ?? '')} ${String(user.lastName ?? '')}`.trim() ||
+                                  String(user.email ?? t('common.noName'));
+                                if (confirm(t('dashboard.users.confirmDelete', { name })))
                                   void userAction(`/delete-account/${user.id}`, 'DELETE');
                               }}
                             >

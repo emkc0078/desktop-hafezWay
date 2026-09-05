@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
-# Run on the production server to restore the .env files and nginx site config
-# from a configs_*.tar.gz produced by server-backup.sh.
+# Run on the production server to restore the .env files, nginx configs, systemd
+# units, sudoers, and Let's Encrypt tree from a configs_*.tar.gz produced by
+# server-backup.sh.
 #
 # The archive stores files at their original absolute paths (tar strips the
 # leading "/"), so extracting with `-C /` puts them back where they came from:
 #   /var/www/back-hafezway/.env
 #   /var/www/front-hafezWay/.env
 #   /var/www/front-hafezWay/.env.production
-#   /etc/nginx/sites-available/hafezway.com
+#   /etc/nginx/nginx.conf
+#   /etc/nginx/sites-available/...
+#   /etc/nginx/sites-enabled/...
+#   /etc/systemd/system/node-backend.service
+#   /etc/sudoers.d/hafezway-deploy
+#   /etc/letsencrypt/...
 #
 # Usage:
 #   sudo bash restore-on-server.sh                                  # newest configs_*.tar.gz in $BACKUP_DIR
@@ -65,9 +71,17 @@ MEMBERS=()
 case "$ONLY" in
   env)
     MEMBERS+=("${BACKEND_DIR#/}/.env" "${FRONTEND_DIR#/}/.env" "${FRONTEND_DIR#/}/.env.production")
+    MEMBERS+=("var/www/back-hafezWay-dev/.env" "var/www/front-hafezWay-dev/.env" "var/www/front-hafezWay-dev/.env.production")
     ;;
   nginx)
-    MEMBERS+=("${NGINX_SITE#/}")
+    MEMBERS+=("${NGINX_SITE#/}" "etc/nginx/nginx.conf")
+    while IFS= read -r entry; do
+      case "$entry" in
+        etc/nginx/*|etc/letsencrypt/*|etc/systemd/system/node-backend*|etc/sudoers.d/hafezway-deploy)
+          MEMBERS+=("$entry")
+          ;;
+      esac
+    done < <(tar -tzf "$ARCHIVE")
     ;;
   all)
     : # extract everything
@@ -117,9 +131,16 @@ if [[ "$ONLY" == "all" || "$ONLY" == "env" ]]; then
   backup_existing "$BACKEND_DIR/.env"
   backup_existing "$FRONTEND_DIR/.env"
   backup_existing "$FRONTEND_DIR/.env.production"
+  backup_existing "/var/www/back-hafezWay-dev/.env"
+  backup_existing "/var/www/front-hafezWay-dev/.env"
+  backup_existing "/var/www/front-hafezWay-dev/.env.production"
 fi
 if [[ "$ONLY" == "all" || "$ONLY" == "nginx" ]]; then
   backup_existing "$NGINX_SITE"
+  backup_existing "/etc/nginx/nginx.conf"
+  backup_existing "/etc/systemd/system/node-backend.service"
+  backup_existing "/etc/systemd/system/node-backend-dev.service"
+  backup_existing "/etc/sudoers.d/hafezway-deploy"
 fi
 echo
 
@@ -161,6 +182,9 @@ if [[ "$ONLY" == "all" || "$ONLY" == "env" ]]; then
   secure_env "$BACKEND_DIR/.env"
   secure_env "$FRONTEND_DIR/.env"
   secure_env "$FRONTEND_DIR/.env.production"
+  secure_env "/var/www/back-hafezWay-dev/.env"
+  secure_env "/var/www/front-hafezWay-dev/.env"
+  secure_env "/var/www/front-hafezWay-dev/.env.production"
   echo
 fi
 
@@ -176,6 +200,15 @@ if [[ "$ONLY" == "all" || "$ONLY" == "nginx" ]]; then
         ln -sf "$NGINX_SITE" "$link_path"
         echo "  enabled site: $link_path"
       fi
+    fi
+  fi
+
+  if [[ -f /etc/systemd/system/node-backend.service || -f /etc/systemd/system/node-backend-dev.service ]]; then
+    if [[ "${DRY_RUN:-0}" == "1" ]]; then
+      echo "  [DRY_RUN] would run: systemctl daemon-reload"
+    else
+      systemctl daemon-reload
+      echo "  systemd daemon-reload done"
     fi
   fi
 
@@ -204,5 +237,7 @@ if [[ "${DRY_RUN:-0}" != "1" ]]; then
 fi
 echo
 echo "Next steps:"
-echo "  - Restart the backend (e.g. pm2 restart back-hafezway, or systemctl restart hafezway-back)."
-echo "  - If the frontend is built from its .env, rebuild it (cd $FRONTEND_DIR && npm run build)."
+echo "  - Restart the backend: systemctl restart node-backend"
+echo "  - If staging was restored: systemctl restart node-backend-dev"
+echo "  - If the frontend is built from its .env, rebuild it (cd $FRONTEND_DIR && expo export / npm run build)."
+echo "  - Restore MongoDB and images from System & logs if this is a new host."
