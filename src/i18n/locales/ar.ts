@@ -1251,6 +1251,11 @@ export const ar: TranslationTree = {
     freeButtonEn: 'نص زر المجاني (EN)',
     freeButtonAr: 'نص زر المجاني (AR)',
     colKey: 'البرنامج',
+    planKeyHint:
+      'مفتاح إنجليزي صغير يبدأ بحرف (مثل two_hours_individual_500). يُملأ تلقائياً من الساعات والمسار والسعر إذا تركته فارغاً.',
+    planKeyInvalid:
+      'مفتاح الباقة يجب أن يكون إنجليزيًا صغيرًا ويبدأ بحرف، مثل two_hours_individual_500. املأ حقل البرنامج، أو حدّد الساعات الشهرية والسعر ليُولَّد تلقائياً.',
+    labelsRequired: 'التسمية بالإنجليزية والعربية مطلوبة.',
     colLabel: 'التسمية (EN)',
     colLabelAr: 'التسمية (AR)',
     colTier: 'النوع',

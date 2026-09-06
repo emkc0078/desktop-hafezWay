@@ -1248,6 +1248,11 @@ export const en: TranslationTree = {
     freeButtonEn: 'Free button label (EN)',
     freeButtonAr: 'Free button label (AR)',
     colKey: 'Program',
+    planKeyHint:
+      'Lowercase English slug, starting with a letter (e.g. two_hours_individual_500). Filled automatically from hours, track, and price if you leave it empty.',
+    planKeyInvalid:
+      'Plan key must be a lowercase English slug starting with a letter, like two_hours_individual_500. Fill Program, or set monthly hours and price so it can be generated.',
+    labelsRequired: 'English and Arabic labels are required.',
     colLabel: 'Label (EN)',
     colLabelAr: 'Label (AR)',
     colTier: 'Tier',

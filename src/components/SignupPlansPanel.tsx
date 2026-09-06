@@ -55,6 +55,46 @@ type AdminListResponse = {
   data?: { page?: PageSettings | null; plans?: SignupPlanRow[] };
 };
 
+const PLAN_KEY_RE = /^[a-z][a-z0-9_]{0,63}$/;
+
+const HOURS_WORD: Record<number, string> = {
+  1: 'one_hour',
+  2: 'two_hours',
+  3: 'three_hours',
+  4: 'four_hours',
+  6: 'six_hours',
+  8: 'eight_hours',
+  10: 'ten_hours',
+  12: 'twelve_hours',
+};
+
+function slugifyPlanKey(raw: string): string {
+  const slug = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  if (!slug) return '';
+  return /^[a-z]/.test(slug) ? slug : `plan_${slug}`;
+}
+
+function suggestPlanKey(form: Partial<SignupPlanRow>): string {
+  if (form.tier === 'free') return 'free';
+  const hours = Number(form.monthlyHours);
+  const price = Number(form.priceAmount);
+  const hoursPart =
+    Number.isFinite(hours) && hours > 0
+      ? (HOURS_WORD[hours] ?? `hours_${Math.round(hours)}`)
+      : '';
+  const trackPart = form.track === 'individual' ? 'individual' : '';
+  const pricePart =
+    Number.isFinite(price) && price > 0 ? String(Math.round(price)) : '';
+  const generated = [hoursPart, trackPart, pricePart].filter(Boolean).join('_');
+  if (generated && PLAN_KEY_RE.test(generated)) return generated;
+  return slugifyPlanKey(form.labelEn ?? '');
+}
+
 const emptyPlanForm = (): Partial<SignupPlanRow> & { planKey: string } => ({
   planKey: '',
   labelEn: '',
@@ -93,6 +133,8 @@ export function SignupPlansPanel() {
   const [planModalOpen, setPlanModalOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [planForm, setPlanForm] = useState(emptyPlanForm());
+  const [planKeyTouched, setPlanKeyTouched] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!adminToken) return;
@@ -143,22 +185,51 @@ export function SignupPlansPanel() {
 
   const openCreate = () => {
     setEditingKey(null);
-    setPlanForm(emptyPlanForm());
+    setPlanKeyTouched(false);
+    setFormError(null);
+    const form = emptyPlanForm();
+    form.planKey = suggestPlanKey(form);
+    setPlanForm(form);
     setPlanModalOpen(true);
   };
 
   const openEdit = (row: SignupPlanRow) => {
     setEditingKey(row.planKey);
+    setPlanKeyTouched(true);
+    setFormError(null);
     setPlanForm({ ...row });
     setPlanModalOpen(true);
   };
 
   const savePlan = async () => {
     if (!adminToken) return;
+    const suggested = suggestPlanKey(planForm);
+    const planKey = slugifyPlanKey(planForm.planKey || suggested);
+    if (!PLAN_KEY_RE.test(planKey)) {
+      setFormError(t('signupPlans.planKeyInvalid'));
+      return;
+    }
+    const labelEn = (planForm.labelEn ?? '').trim();
+    const labelAr = (planForm.labelAr ?? '').trim();
+    if (!labelEn || !labelAr) {
+      setFormError(t('signupPlans.labelsRequired'));
+      return;
+    }
+    const confirmHeadingEn =
+      (planForm.confirmHeadingEn ?? '').trim() || labelEn;
+    const confirmHeadingAr =
+      (planForm.confirmHeadingAr ?? '').trim() || labelAr;
     setLoading(true);
+    setFormError(null);
+    setMessage(null);
     try {
       const body = {
         ...planForm,
+        planKey,
+        labelEn,
+        labelAr,
+        confirmHeadingEn,
+        confirmHeadingAr,
         track: planForm.tier === 'free' ? 'group' : (planForm.track ?? 'group'),
       };
       if (editingKey) {
@@ -178,10 +249,7 @@ export function SignupPlansPanel() {
       await load();
     } catch (e) {
       if (isAdminSessionExpiredError(e)) return;
-      setMessage({
-        type: 'err',
-        text: e instanceof Error ? e.message : t('common.error'),
-      });
+      setFormError(e instanceof Error ? e.message : t('common.error'));
     } finally {
       setLoading(false);
     }
@@ -248,7 +316,21 @@ export function SignupPlansPanel() {
     key: K,
     value: SignupPlanRow[K],
   ) => {
-    setPlanForm((f) => ({ ...f, [key]: value }));
+    setPlanForm((f) => {
+      const next = { ...f, [key]: value };
+      if (
+        !editingKey &&
+        !planKeyTouched &&
+        (key === 'monthlyHours' ||
+          key === 'priceAmount' ||
+          key === 'track' ||
+          key === 'tier' ||
+          key === 'labelEn')
+      ) {
+        next.planKey = suggestPlanKey(next);
+      }
+      return next;
+    });
   };
 
   return (
@@ -405,13 +487,22 @@ export function SignupPlansPanel() {
         onClose={() => setPlanModalOpen(false)}
       >
         <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1">
+          {formError ? (
+            <p className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+              {formError}
+            </p>
+          ) : null}
           <Field label={t('signupPlans.colKey')}>
             <Input
               value={planForm.planKey ?? ''}
               disabled={!!editingKey}
-              onChange={(e) => setPlanField('planKey', e.target.value)}
-              placeholder="two_hours_300"
+              onChange={(e) => {
+                setPlanKeyTouched(true);
+                setPlanField('planKey', e.target.value);
+              }}
+              placeholder="two_hours_individual_500"
             />
+            <p className="mt-1 text-xs text-text-muted">{t('signupPlans.planKeyHint')}</p>
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Label (EN)">
