@@ -11,7 +11,8 @@ on:
 
 concurrency:
   group: desktop-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not cancel in-flight master releases — a cancelled bump/publish leaves master inconsistent.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   build:
@@ -78,21 +79,34 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Bump patch version
-        run: npm run bump
-
-      - name: Commit version bump
+      - name: Bump version, commit, and push
         shell: bash
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json
-          if git diff --cached --quiet; then
-            echo "No version change to commit"
-          else
+
+          # Master may move while this job runs (other merges). Always bump from the
+          # current tip and retry push after a non-fast-forward rejection.
+          for attempt in 1 2 3 4 5; do
+            git fetch origin master
+            git reset --hard origin/master
+            npm run bump
+            git add package.json
+            if git diff --cached --quiet; then
+              echo "No version change to commit"
+              exit 0
+            fi
             HUSKY=0 git commit -m "chore: bump version for release [skip ci]"
-            git push origin HEAD:master
-          fi
+            if git push origin HEAD:master; then
+              echo "Pushed version bump on attempt ${attempt}"
+              exit 0
+            fi
+            echo "Push rejected (attempt ${attempt}); retrying from latest master..."
+            sleep $((attempt * 3))
+          done
+          echo "Failed to push version bump after retries"
+          exit 1
 
       - name: Icons + Vite build
         run: npm run icons && npm run build
