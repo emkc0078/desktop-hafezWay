@@ -4,7 +4,7 @@
 - Install, lint, Vite build
 
 ## Push to `master` (or manual **workflow_dispatch**)
-1. Bump `package.json` patch version and commit with `[skip ci]`
+1. Bump `package.json` patch version from the latest `master` tip, commit with `[skip ci]`, and push (retries on non-fast-forward if master moved)
 2. Build Windows installers on `windows-latest`
 3. Publish a **GitHub Release** (`electron-builder --publish always`) with:
    - `Hafez Way Admin Setup x.y.z.exe` (installer)
