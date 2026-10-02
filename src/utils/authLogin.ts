@@ -7,6 +7,11 @@ export type LoginSuccess = {
   sessionId?: string;
 };
 
+export type LoginLanguageOptions = {
+  language?: 'en' | 'ar';
+  languageTag?: string;
+};
+
 export function isLocalhostApi(url: string): boolean {
   return /localhost|127\.0\.0\.1/i.test(url);
 }
@@ -18,9 +23,15 @@ export function isUnreachableFetchError(error: unknown): boolean {
   );
 }
 
-async function readJson(res: Response): Promise<{ message?: string; data?: LoginSuccess }> {
+async function readJson(
+  res: Response,
+): Promise<{ message?: string; data?: LoginSuccess; success?: boolean }> {
   try {
-    return (await res.json()) as { message?: string; data?: LoginSuccess };
+    return (await res.json()) as {
+      message?: string;
+      data?: LoginSuccess;
+      success?: boolean;
+    };
   } catch {
     return {};
   }
@@ -34,15 +45,29 @@ export async function loginWithPassword(
   serverUrl: string,
   email: string,
   password: string,
+  languageOptions: LoginLanguageOptions = {},
 ): Promise<LoginSuccess> {
   const base = serverUrl.replace(/\/$/, '');
   const url = `${base}/auth/login`;
+  const language = languageOptions.language === 'ar' ? 'ar' : 'en';
+  const languageTag =
+    languageOptions.languageTag || (language === 'ar' ? 'ar-SA' : 'en-US');
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), password }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept-Language': languageTag,
+        'X-User-Language': language,
+        'X-User-Language-Tag': languageTag,
+      },
+      body: JSON.stringify({
+        email: email.trim(),
+        password,
+        language,
+        languageTag,
+      }),
     });
   } catch {
     throw new Error(
@@ -59,7 +84,11 @@ export async function loginWithPassword(
         `The API blocked this app origin (CORS) at ${url}. CORS_ORIGINS must include http://localhost:5173.`,
       );
     }
-    throw new Error(json.message || `Login failed (${res.status}) at ${url}`);
+    const err = new Error(
+      json.message || `Login failed (${res.status}) at ${url}`,
+    ) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
   if (!json.data?.accessToken) {
     throw new Error('Invalid response: missing access token');
