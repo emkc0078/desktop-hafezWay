@@ -8,7 +8,7 @@ import {
   STORAGE_REMEMBER_ME,
   STORAGE_REMEMBERED_EMAIL,
 } from '@/context/AdminSettingsContext';
-import { useT } from '@/context/LocaleContext';
+import { useLocale, useT } from '@/context/LocaleContext';
 import { loginWithPassword, verifyAdministratorAccess, isLocalhostApi } from '@/utils/authLogin';
 import { Btn, Field, Input } from '@/components/ui';
 
@@ -31,6 +31,7 @@ function readRememberedEmail(): string {
 
 export function AdminAuthBar({ showTestHint }: Props) {
   const t = useT();
+  const { locale } = useLocale();
   const {
     serverUrl,
     setServerUrl,
@@ -65,7 +66,10 @@ export function AdminAuthBar({ showTestHint }: Props) {
     setBusy(true);
     try {
       const apiHost = serverUrl.replace(/\/$/, '');
-      const session = await loginWithPassword(apiHost, email, password);
+      const session = await loginWithPassword(apiHost, email, password, {
+        language: locale,
+        languageTag: locale === 'ar' ? 'ar-SA' : 'en-US',
+      });
       await verifyAdministratorAccess(`${apiHost}/api`, session.accessToken);
       setAdminSession(session.accessToken, session.name || email.trim(), {
         rememberMe,
@@ -80,7 +84,13 @@ export function AdminAuthBar({ showTestHint }: Props) {
       setPassword('');
       setShowPassword(false);
     } catch (err) {
-      setError((err as Error).message);
+      const status = (err as Error & { status?: number }).status;
+      const message =
+        status === 429
+          ? ((err as Error).message?.trim() || t('auth.rateLimitLogin'))
+          : (err as Error).message;
+      setError(message);
+      window.alert(message);
     } finally {
       setBusy(false);
     }

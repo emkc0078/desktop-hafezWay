@@ -15,6 +15,7 @@ import { CustomerServiceChatPanel } from '@/components/CustomerServiceChatPanel'
 import { PaymentsPanel } from '@/components/PaymentsPanel';
 import { SignupOffersPanel } from '@/components/SignupOffersPanel';
 import { SignupPlansPanel } from '@/components/SignupPlansPanel';
+import { EmailTemplatesPanel } from '@/components/EmailTemplatesPanel';
 import { SiteAgreementPanel } from '@/components/SiteAgreementPanel';
 import { VideosPanel } from '@/components/VideosPanel';
 import { AdvertisementsPanel } from '@/components/AdvertisementsPanel';
@@ -75,6 +76,8 @@ type Tab =
   | 'studentReports'
   | 'roomRatings'
   | 'notifications'
+  | 'mailLog'
+  | 'emailTemplates'
   | 'payments'
   | 'signupPlans'
   | 'offers'
@@ -1453,6 +1456,20 @@ export function AdminDashboardPage() {
 
   const [notifUsers, setNotifUsers] = useState<NotifUserRow[]>([]);
   const [notifHistory, setNotifHistory] = useState<unknown[]>([]);
+  const [mailDaily, setMailDaily] = useState<
+    { date: string; from: string; sent: number; success: number; failed: number }[]
+  >([]);
+  const [mailMessages, setMailMessages] = useState<
+    {
+      from?: string;
+      to?: string;
+      subject?: string;
+      success?: boolean;
+      error?: string;
+      createdAt?: string;
+    }[]
+  >([]);
+  const [mailLogLoading, setMailLogLoading] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
 
   const loadUsersWithTokens = useCallback(async () => {
@@ -1486,12 +1503,44 @@ export function AdminDashboardPage() {
     }
   }, [adminToken, serverUrl, showMessage, t]);
 
+  const loadMailLog = useCallback(async () => {
+    if (!adminToken) return;
+    setMailLogLoading(true);
+    try {
+      const data = await adminFetchJson<{
+        data?: {
+          daily?: { date: string; from: string; sent: number; success: number; failed: number }[];
+          messages?: {
+            from?: string;
+            to?: string;
+            subject?: string;
+            success?: boolean;
+            error?: string;
+            createdAt?: string;
+          }[];
+        };
+      }>(`${serverUrl}/api/notifications/mail-log`, adminToken);
+      setMailDaily(data.data?.daily ?? []);
+      setMailMessages(data.data?.messages ?? []);
+    } catch (e) {
+      showMessage(t('dashboard.mailLog.loadError', { message: (e as Error).message }), 'error');
+    } finally {
+      setMailLogLoading(false);
+    }
+  }, [adminToken, serverUrl, showMessage, t]);
+
   useEffect(() => {
     if (tab === 'notifications' && adminToken) {
       void loadUsersWithTokens();
       void loadNotificationHistory();
     }
   }, [tab, adminToken, loadUsersWithTokens, loadNotificationHistory]);
+
+  useEffect(() => {
+    if (tab === 'mailLog' && adminToken) {
+      void loadMailLog();
+    }
+  }, [tab, adminToken, loadMailLog]);
 
   const [sendModal, setSendModal] = useState(false);
   const [sendAllModal, setSendAllModal] = useState(false);
@@ -1949,7 +1998,10 @@ export function AdminDashboardPage() {
     | undefined;
 
   const isWideDashboardTab =
-    tab === 'rooms' || tab === 'users' || tab === 'customerService';
+    tab === 'rooms' ||
+    tab === 'users' ||
+    tab === 'customerService' ||
+    tab === 'emailTemplates';
 
   const navEntries = useMemo<DashboardNavEntry[]>(
     () => [
@@ -2004,6 +2056,8 @@ export function AdminDashboardPage() {
         badgeTone: 'red',
       },
       { id: 'notifications', label: t('dashboard.tabs.notifications'), kind: 'item' },
+      { id: 'mailLog', label: t('dashboard.tabs.mailLog'), kind: 'item' },
+      { id: 'emailTemplates', label: t('dashboard.tabs.emailTemplates'), kind: 'item' },
       { id: 'siteAgreement', label: t('dashboard.tabs.siteAgreement'), kind: 'item' },
     ],
     [t, paymentsPending, customerServiceUnread],
@@ -2969,6 +3023,101 @@ export function AdminDashboardPage() {
             </Card>
           </div>
         )}
+
+        {tab === 'mailLog' && (
+          <div className="space-y-6">
+            <Card>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold">{t('dashboard.mailLog.title')}</h2>
+                  <p className="mt-1 text-sm text-text-muted">{t('dashboard.mailLog.hint')}</p>
+                </div>
+                <Btn variant="info" onClick={() => void loadMailLog()} disabled={mailLogLoading}>
+                  {t('common.refresh')}
+                </Btn>
+              </div>
+              <h3 className="mb-3 text-base font-semibold">{t('dashboard.mailLog.dailyTitle')}</h3>
+              {!mailDaily.length ? (
+                <p className="text-text-muted">{t('dashboard.mailLog.noDaily')}</p>
+              ) : (
+                <TableShell colWidths={['22%', '34%', '14%', '15%', '15%']}>
+                  <thead>
+                    <tr>
+                      {[
+                        t('dashboard.mailLog.cols.date'),
+                        t('dashboard.mailLog.cols.from'),
+                        t('dashboard.mailLog.cols.sent'),
+                        t('dashboard.mailLog.cols.success'),
+                        t('dashboard.mailLog.cols.failed'),
+                      ].map((heading) => (
+                        <th key={heading} className={tableHeadClass}>
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                    {mailDaily.map((row) => (
+                      <tr key={`${row.date}-${row.from}`}>
+                        <td className="px-3 py-2">{row.date}</td>
+                        <td className="px-3 py-2">{row.from}</td>
+                        <td className="px-3 py-2 font-semibold">{row.sent}</td>
+                        <td className="px-3 py-2 text-emerald-600">{row.success}</td>
+                        <td className="px-3 py-2 text-red-600">{row.failed}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </TableShell>
+              )}
+            </Card>
+            <Card>
+              <h3 className="mb-3 text-base font-semibold">{t('dashboard.mailLog.messagesTitle')}</h3>
+              {!mailMessages.length ? (
+                <p className="text-text-muted">{t('dashboard.mailLog.noMessages')}</p>
+              ) : (
+                <TableShell colWidths={['18%', '22%', '22%', '22%', '16%']}>
+                  <thead>
+                    <tr>
+                      {[
+                        t('dashboard.mailLog.cols.date'),
+                        t('dashboard.mailLog.cols.from'),
+                        t('dashboard.mailLog.cols.to'),
+                        t('dashboard.mailLog.cols.subject'),
+                        t('dashboard.mailLog.cols.status'),
+                      ].map((heading) => (
+                        <th key={heading} className={tableHeadClass}>
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                    {mailMessages.map((row, index) => (
+                      <tr key={`${row.createdAt ?? ''}-${index}`}>
+                        <td className="px-3 py-2 text-xs">
+                          {row.createdAt ? new Date(row.createdAt).toLocaleString() : ''}
+                        </td>
+                        <td className="px-3 py-2">{row.from ?? ''}</td>
+                        <td className="px-3 py-2">{row.to ?? ''}</td>
+                        <td className="max-w-xs truncate px-3 py-2">{row.subject ?? ''}</td>
+                        <td className={`px-3 py-2 ${row.success ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {row.success
+                            ? t('dashboard.mailLog.delivered')
+                            : t('dashboard.mailLog.failed')}
+                          {!row.success && row.error ? (
+                            <span className="mt-1 block text-xs text-red-700">{row.error}</span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </TableShell>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {tab === 'emailTemplates' && <EmailTemplatesPanel />}
 
         <div className={tab === 'payments' ? 'block' : 'hidden'}>
           <PaymentsPanel
@@ -4245,7 +4394,11 @@ export function AdminDashboardPage() {
             >
               <option value="general">{t('dashboard.notifications.types.general')}</option>
               <option value="chat">{t('dashboard.notifications.types.chat')}</option>
+              <option value="email">{t('dashboard.notifications.types.email')}</option>
             </Select>
+            {notifForm.type === 'email' ? (
+              <p className="mt-2 text-sm text-text-muted">{t('dashboard.notifications.emailHint')}</p>
+            ) : null}
           </Field>
           <div className="flex justify-end gap-2">
             <Btn type="button" variant="secondary" onClick={closeSendModal}>
@@ -4405,7 +4558,11 @@ export function AdminDashboardPage() {
             >
               <option value="general">{t('dashboard.notifications.types.general')}</option>
               <option value="chat">{t('dashboard.notifications.types.chat')}</option>
+              <option value="email">{t('dashboard.notifications.types.email')}</option>
             </Select>
+            {roomNotifForm.type === 'email' ? (
+              <p className="mt-2 text-sm text-text-muted">{t('dashboard.notifications.emailHint')}</p>
+            ) : null}
           </Field>
           <div className="flex justify-end gap-2">
             <Btn type="button" variant="secondary" onClick={closeSendRoomModal}>
@@ -4458,7 +4615,11 @@ export function AdminDashboardPage() {
             >
               <option value="general">{t('dashboard.notifications.types.general')}</option>
               <option value="chat">{t('dashboard.notifications.types.chat')}</option>
+              <option value="email">{t('dashboard.notifications.types.email')}</option>
             </Select>
+            {sendAllForm.type === 'email' ? (
+              <p className="mt-2 text-sm text-text-muted">{t('dashboard.notifications.emailHint')}</p>
+            ) : null}
           </Field>
           <div className="flex justify-end gap-2">
             <Btn type="button" variant="secondary" onClick={() => setSendAllModal(false)}>
