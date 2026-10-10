@@ -23,7 +23,7 @@ type RunOutput = {
   error?: string;
 };
 
-const DEFAULT_SERVER = 'root@194.135.91.75';
+const DEFAULT_SERVER = 'root@109.235.65.211';
 
 type Props = {
   onMessage: (text: string, type: 'success' | 'error' | 'info') => void;
@@ -164,7 +164,7 @@ export function RestoreBackupPanel({ onMessage }: Props) {
             <Input
               value={server}
               onChange={(e) => setServer(e.target.value)}
-              placeholder="root@194.135.91.75"
+              placeholder="root@109.235.65.211"
               disabled={running}
             />
           </Field>

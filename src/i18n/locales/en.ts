@@ -66,7 +66,7 @@ export const en: TranslationTree = {
   },
   auth: {
     localApi: 'Local API (localhost:3000)',
-    remoteApi: 'Remote API (194.135.91.75:3000)',
+    remoteApi: 'Remote API (109.235.65.211)',
     livekitLabel: 'LiveKit web app (room links)',
     lightMode: 'Light mode',
     darkMode: 'Dark mode',
@@ -85,7 +85,7 @@ export const en: TranslationTree = {
     signIn: 'Sign in as admin',
     signingIn: 'Signing in…',
     enterEmailPassword: 'Enter email and password.',
-    loginHint: 'Uses POST /auth/login, then verifies administrator access.',
+    loginHint: 'Uses POST /api/auth/login, then verifies administrator access.',
     loginTarget: 'Sign-in request goes to {url}',
     localApiHint:
       'Local API is selected. If nothing is running on localhost:3000, login will fail with no request on the live server. Switch to Remote API.',

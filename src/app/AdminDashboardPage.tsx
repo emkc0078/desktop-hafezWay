@@ -1216,14 +1216,12 @@ export function AdminDashboardPage() {
         roomForm.reservedTeacherId === '__none__'
           ? null
           : roomForm.reservedTeacherId || null;
-      const body = {
+      const body: Record<string, unknown> = {
         nameAr,
         nameEn,
         description: description || undefined,
         type,
         targetAudience,
-        childGender:
-          targetAudience === RoomTargetAudience.CHILDREN ? childGender : null,
         participantIds: participantIds.length ? participantIds : undefined,
         reservedTeacherId,
         schedule: {
@@ -1233,6 +1231,9 @@ export function AdminDashboardPage() {
           timeTo: scheduleTimeTo,
         },
       };
+      if (targetAudience === RoomTargetAudience.CHILDREN) {
+        body.childGender = childGender;
+      }
       if (editingRoomId) {
         await adminFetchJson(`${serverUrl}/api/rooms/${editingRoomId}`, adminToken, {
           method: 'PATCH',
