@@ -113,6 +113,27 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      # electron-builder uploads the .exe and the .blockmap together. Each upload
+      # creates the GitHub release if it is missing, so the second request dies
+      # with 422 tag_name already_exists. Create the release first; the build
+      # then only attaches files.
+      - name: Create GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --draft=false --latest --title "$VERSION"
+          else
+            gh release create "$TAG" \
+              --title "$VERSION" \
+              --notes "Hafez Way Admin ${VERSION}" \
+              --latest
+          fi
+
       - name: Build + publish GitHub Release
         run: npx electron-builder --win --x64 --publish always
         env:
