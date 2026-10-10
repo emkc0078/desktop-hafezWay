@@ -3,7 +3,11 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAdminSettings } from '@/context/AdminSettingsContext';
 import { useLocale } from '@/context/LocaleContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
-import { AppUpdateBanner } from '@/components/AppUpdateBanner';
+import {
+  AppUpdateBanner,
+  AppUpdateHeaderButton,
+  AppUpdateProvider,
+} from '@/components/AppUpdateBanner';
 import { Btn, Modal } from '@/components/ui';
 import { useAppVersion } from '@/hooks/useAppVersion';
 
@@ -62,6 +66,7 @@ export function AppShell() {
         </div>
       </Modal>
 
+      <AppUpdateProvider>
       <AppUpdateBanner />
 
       <div className="border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
@@ -82,6 +87,7 @@ export function AppShell() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 rtl-flip-row">
+            <AppUpdateHeaderButton />
             <nav className="flex gap-2">
               <NavLink to="/" end className={linkClass}>
                 {t('nav.adminDashboard')}
@@ -103,6 +109,7 @@ export function AppShell() {
       <div className="flex-1 overflow-auto">
         <Outlet />
       </div>
+      </AppUpdateProvider>
     </div>
   );
 }
