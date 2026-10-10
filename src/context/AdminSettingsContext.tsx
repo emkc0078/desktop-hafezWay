@@ -20,7 +20,7 @@ const STORAGE_REMEMBER_ME = 'admin_remember_me';
 const STORAGE_REMEMBERED_EMAIL = 'admin_remembered_email';
 
 const DEFAULT_SERVER = 'http://localhost:3000';
-const REMOTE_SERVER = 'http://194.135.91.75:3000';
+const REMOTE_SERVER = 'http://109.235.65.211';
 /** Web app that serves `/livekit/:roomId` (often different port from API, e.g. 8081 vs 3000). */
 const DEFAULT_LIVE_APP = 'http://localhost:8081';
 

@@ -277,7 +277,7 @@ export function AdminAuthBar({ showTestHint }: Props) {
               <span className="text-xs text-text-muted">{t('auth.loginHint')}</span>
             </div>
             <p className="font-mono text-xs text-text-muted">
-              {t('auth.loginTarget', { url: `${serverUrl.replace(/\/$/, '')}/auth/login` })}
+              {t('auth.loginTarget', { url: `${serverUrl.replace(/\/$/, '')}/api/auth/login` })}
             </p>
             {isLocalhostApi(serverUrl) ? (
               <p className="text-sm text-amber-700 dark:text-amber-300">{t('auth.localApiHint')}</p>

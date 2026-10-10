@@ -66,7 +66,7 @@ export const ar: TranslationTree = {
   },
   auth: {
     localApi: 'واجهة محلية (localhost:3000)',
-    remoteApi: 'واجهة بعيدة (194.135.91.75:3000)',
+    remoteApi: 'واجهة بعيدة (109.235.65.211)',
     livekitLabel: 'تطبيق LiveKit (روابط الغرف)',
     lightMode: 'الوضع الفاتح',
     darkMode: 'الوضع الداكن',
@@ -85,7 +85,7 @@ export const ar: TranslationTree = {
     signIn: 'تسجيل الدخول كمسؤول',
     signingIn: 'جاري تسجيل الدخول…',
     enterEmailPassword: 'أدخل البريد وكلمة المرور.',
-    loginHint: 'يستخدم POST /auth/login ثم يتحقق من صلاحية المسؤول.',
+    loginHint: 'يستخدم POST /api/auth/login ثم يتحقق من صلاحية المسؤول.',
     loginTarget: 'طلب تسجيل الدخول يذهب إلى {url}',
     localApiHint:
       'الواجهة المحلية محددة. إن لم يكن هناك خادم على localhost:3000، سيفشل الدخول ولن يصل أي طلب للخادم الحي. اختر الواجهة البعيدة.',
