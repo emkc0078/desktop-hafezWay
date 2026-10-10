@@ -43,6 +43,7 @@ export type AppUpdateInfo = {
   currentVersion: string;
   releaseNotes?: string;
   simulated?: boolean;
+  openedExternally?: boolean;
 };
 
 export type AppUpdateProgress = {
@@ -76,7 +77,7 @@ declare global {
 
       getAppVersion: () => Promise<string>;
       checkForUpdates: () => Promise<{ ok: boolean; simulated?: boolean; error?: string; updateInfo?: unknown }>;
-      downloadUpdate: () => Promise<{ ok: boolean; simulated?: boolean; error?: string }>;
+      downloadUpdate: (version?: string) => Promise<{ ok: boolean; simulated?: boolean; opened?: boolean; error?: string; url?: string }>;
       installUpdate: () => Promise<{ ok: boolean; simulated?: boolean }>;
       openLatestReleasePage: (version?: string) => Promise<{ ok: boolean; url?: string }>;
       onUpdateAvailable: (listener: (info: AppUpdateInfo) => void) => () => void;

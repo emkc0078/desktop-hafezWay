@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useT } from '@/context/LocaleContext';
 import { Btn } from '@/components/ui';
 
@@ -7,7 +15,16 @@ type UpdateInfo = {
   currentVersion: string;
   releaseNotes?: string;
   simulated?: boolean;
+  /** Installer was handed to the browser because this app build cannot install in place. */
+  openedExternally?: boolean;
 };
+
+function installerDownloadUrl(version?: string): string {
+  const ver = (version || '').trim().replace(/^v/i, '');
+  const base = 'https://github.com/emkc0078/desktop-hafezWay/releases';
+  if (!ver) return `${base}/latest`;
+  return `${base}/download/v${ver}/Hafez-Way-Admin-Setup-${ver}.exe`;
+}
 
 type UpdateStatus =
   | { kind: 'idle' }
@@ -16,17 +33,46 @@ type UpdateStatus =
   | { kind: 'downloaded'; info: UpdateInfo }
   | { kind: 'error'; message: string; info?: UpdateInfo };
 
-export function AppUpdateBanner() {
-  const t = useT();
+type AppUpdateContextValue = {
+  status: UpdateStatus;
+  info: UpdateInfo | undefined;
+  dismissBanner: () => void;
+  bannerDismissed: boolean;
+  download: () => Promise<void>;
+  install: () => void;
+  openReleasePage: () => void;
+};
+
+const AppUpdateContext = createContext<AppUpdateContextValue | null>(null);
+
+function useAppUpdate(): AppUpdateContextValue {
+  const ctx = useContext(AppUpdateContext);
+  if (!ctx) throw new Error('useAppUpdate must be used within AppUpdateProvider');
+  return ctx;
+}
+
+export function AppUpdateProvider({ children }: { children: ReactNode }) {
   const bridge = typeof window !== 'undefined' ? window.hafezwayAdmin : undefined;
   const [status, setStatus] = useState<UpdateStatus>({ kind: 'idle' });
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!bridge?.onUpdateAvailable) return;
+    if (!bridge?.onUpdateAvailable) {
+      if (import.meta.env.DEV) {
+        setStatus({
+          kind: 'available',
+          info: { version: '0.1.21', currentVersion: '0.1.20', simulated: true },
+        });
+      }
+      return;
+    }
 
     const offAvailable = bridge.onUpdateAvailable((info) => {
-      setStatus({ kind: 'available', info });
+      setDismissedVersion(null);
+      setStatus((prev) => {
+        if (prev.kind === 'downloading' || prev.kind === 'downloaded') return prev;
+        return { kind: 'available', info };
+      });
     });
     const offProgress = bridge.onUpdateDownloadProgress?.((p) => {
       setStatus((prev) => {
@@ -52,7 +98,7 @@ export function AppUpdateBanner() {
     });
 
     void bridge.checkForUpdates?.().catch(() => {
-      /* ignore — banner only appears on update-available */
+      /* banner and header button appear only when an update is available */
     });
 
     return () => {
@@ -71,30 +117,41 @@ export function AppUpdateBanner() {
       ? status.info
       : undefined;
 
-  const hidden =
-    status.kind === 'idle' ||
-    (info && dismissedVersion === info.version && status.kind === 'available');
-
   const download = useCallback(async () => {
-    if (!bridge?.downloadUpdate || !info) return;
-    if (info.simulated) {
-      setStatus({ kind: 'downloaded', info });
-      return;
-    }
+    if (!info) return;
     setStatus({ kind: 'downloading', info, percent: 0 });
     try {
-      await bridge.downloadUpdate();
+      if (bridge?.downloadUpdate && !info.simulated) {
+        const result = await bridge.downloadUpdate(info.version);
+        if (result && result.ok === false) {
+          setStatus({ kind: 'error', message: result.error || 'Download failed', info });
+        }
+        return;
+      }
+      const url = installerDownloadUrl(info.version);
+      if (bridge?.openLatestReleasePage) {
+        await bridge.openLatestReleasePage(info.version);
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+      setStatus({
+        kind: 'downloaded',
+        info: { ...info, openedExternally: true },
+      });
     } catch (e) {
       setStatus({ kind: 'error', message: (e as Error).message, info });
     }
   }, [bridge, info]);
 
   const install = useCallback(() => {
-    if (!bridge?.installUpdate || !info) return;
-    if (info.simulated) {
-      setStatus({ kind: 'idle' });
+    if (!info) return;
+    if (info.simulated || info.openedExternally) {
+      const url = installerDownloadUrl(info.version);
+      if (bridge?.openLatestReleasePage) void bridge.openLatestReleasePage(info.version);
+      else window.open(url, '_blank', 'noopener,noreferrer');
       return;
     }
+    if (!bridge?.installUpdate) return;
     void bridge.installUpdate();
   }, [bridge, info]);
 
@@ -102,7 +159,38 @@ export function AppUpdateBanner() {
     void bridge?.openLatestReleasePage?.(info?.version);
   }, [bridge, info?.version]);
 
-  if (hidden || !info) return null;
+  const dismissBanner = useCallback(() => {
+    if (info) setDismissedVersion(info.version);
+  }, [info]);
+
+  const value = useMemo(
+    () => ({
+      status,
+      info,
+      dismissBanner,
+      bannerDismissed: Boolean(info && dismissedVersion === info.version),
+      download,
+      install,
+      openReleasePage,
+    }),
+    [status, info, dismissBanner, dismissedVersion, download, install, openReleasePage],
+  );
+
+  return <AppUpdateContext.Provider value={value}>{children}</AppUpdateContext.Provider>;
+}
+
+export function AppUpdateBanner() {
+  const t = useT();
+  const { status, info, bannerDismissed, download, install, openReleasePage, dismissBanner } =
+    useAppUpdate();
+
+  if (
+    !info ||
+    status.kind === 'idle' ||
+    (bannerDismissed && status.kind === 'available')
+  ) {
+    return null;
+  }
 
   const percent = status.kind === 'downloading' ? Math.round(status.percent) : 0;
 
@@ -154,19 +242,69 @@ export function AppUpdateBanner() {
             </Btn>
           ) : null}
           {status.kind === 'available' || status.kind === 'error' ? (
-            <Btn
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setDismissedVersion(info.version);
-                setStatus({ kind: 'idle' });
-              }}
-            >
+            <Btn type="button" variant="secondary" onClick={dismissBanner}>
               {t('common.dismiss')}
             </Btn>
           ) : null}
         </div>
       </div>
     </div>
+  );
+}
+
+/** Header control that swaps label and color until the user downloads or installs. */
+export function AppUpdateHeaderButton() {
+  const t = useT();
+  const { status, info, download, install } = useAppUpdate();
+  const [flip, setFlip] = useState(false);
+  const toggling = status.kind === 'available' || status.kind === 'error' || status.kind === 'downloaded';
+
+  useEffect(() => {
+    if (!toggling) return;
+    const id = window.setInterval(() => setFlip((value) => !value), 700);
+    return () => window.clearInterval(id);
+  }, [toggling]);
+
+  if (!info || status.kind === 'idle') return null;
+
+  if (status.kind === 'downloading') {
+    const percent = Math.round(status.percent);
+    return (
+      <span className="inline-flex items-center rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white">
+        {t('update.downloadingTitle', { version: info.version, percent: String(percent) })}
+      </span>
+    );
+  }
+
+  const installing = status.kind === 'downloaded';
+  const opened = Boolean(info.openedExternally);
+  const label = installing
+    ? opened
+      ? flip
+        ? t('update.headerOpenAgain')
+        : t('update.headerOpened')
+      : flip
+        ? t('update.headerInstall')
+        : t('update.readyTitle', { version: info.version })
+    : flip
+      ? t('update.headerClick')
+      : t('update.headerNew', { version: info.version });
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (installing) install();
+        else void download();
+      }}
+      className={`inline-flex items-center rounded-lg px-3 py-2 text-sm font-bold shadow-md transition-colors duration-300 ${
+        flip
+          ? 'bg-amber-400 text-amber-950 ring-2 ring-amber-200'
+          : 'bg-red-600 text-white ring-2 ring-red-300'
+      }`}
+      aria-live="polite"
+    >
+      {label}
+    </button>
   );
 }

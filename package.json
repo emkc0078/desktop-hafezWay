@@ -75,7 +75,8 @@
       {
         "provider": "github",
         "owner": "emkc0078",
-        "repo": "desktop-hafezWay"
+        "repo": "desktop-hafezWay",
+        "releaseType": "release"
       }
     ]
   },
