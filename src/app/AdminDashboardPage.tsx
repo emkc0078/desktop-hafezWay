@@ -774,7 +774,7 @@ export function AdminDashboardPage() {
       error: undefined,
     }));
     try {
-      let url = `${serverUrl}/rooms?page=${pages.rooms}&limit=20&status=${roomStatusFilter}`;
+      let url = `${serverUrl}/api/rooms?page=${pages.rooms}&limit=20&status=${roomStatusFilter}`;
       if (roomSearch) url += `&search=${encodeURIComponent(roomSearch)}`;
       if (roomTypeFilter) url += `&type=${roomTypeFilter}`;
       const data = await adminFetchJson<{ data?: unknown } | Record<string, unknown>>(url, adminToken);
@@ -796,7 +796,7 @@ export function AdminDashboardPage() {
         : 'dashboard.rooms.confirmDeactivate';
       if (!confirm(t(confirmKey))) return;
       try {
-        await adminFetchJson(`${serverUrl}/rooms/${roomId}/${path}`, adminToken, {
+        await adminFetchJson(`${serverUrl}/api/rooms/${roomId}/${path}`, adminToken, {
           method: 'PATCH',
         });
         setRoomsState((prev) => {
@@ -829,7 +829,7 @@ export function AdminDashboardPage() {
       if (!adminToken) return;
       if (!confirm(t('dashboard.rooms.confirmDelete'))) return;
       try {
-        await adminFetchJson(`${serverUrl}/rooms/${roomId}`, adminToken, {
+        await adminFetchJson(`${serverUrl}/api/rooms/${roomId}`, adminToken, {
           method: 'DELETE',
         });
         setRoomsState((prev) => {
@@ -856,7 +856,7 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     setUsersState({ loading: true });
     try {
-      let url = `${serverUrl}/getUsers?page=${pages.users}&limit=${usersPageSize}`;
+      let url = `${serverUrl}/api/getUsers?page=${pages.users}&limit=${usersPageSize}`;
       if (userSearch) url += `&search=${encodeURIComponent(userSearch)}`;
       if (userRole) url += `&role=${userRole}`;
       if (userTypeFilter) url += `&userType=${encodeURIComponent(userTypeFilter)}`;
@@ -900,7 +900,7 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     setStudentReportsState({ loading: true });
     try {
-      let url = `${serverUrl}/rooms/admin/student-reports?page=${pages.studentReports}&limit=20`;
+      let url = `${serverUrl}/api/rooms/admin/student-reports?page=${pages.studentReports}&limit=20`;
       if (studentReportSearch) url += `&search=${encodeURIComponent(studentReportSearch)}`;
       const data = await adminFetchJson<{ data: unknown }>(url, adminToken);
       setStudentReportsState({ loading: false, data: data.data });
@@ -915,7 +915,7 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     setRoomRatingsState({ loading: true });
     try {
-      let url = `${serverUrl}/rooms/admin/room-ratings?page=${pages.roomRatings}&limit=20`;
+      let url = `${serverUrl}/api/rooms/admin/room-ratings?page=${pages.roomRatings}&limit=20`;
       if (roomRatingSearch) url += `&search=${encodeURIComponent(roomRatingSearch)}`;
       const data = await adminFetchJson<{ data: unknown }>(url, adminToken);
       setRoomRatingsState({ loading: false, data: data.data });
@@ -968,7 +968,7 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     try {
       const data = await adminFetchJson<{ data?: { users?: Record<string, unknown>[] } }>(
-        `${serverUrl}/getUsers?page=1&limit=200&role=teacher`,
+        `${serverUrl}/api/getUsers?page=1&limit=200&role=teacher`,
         adminToken,
       );
       const users = data.data?.users ?? [];
@@ -1052,7 +1052,7 @@ export function AdminDashboardPage() {
 
       try {
         const res = await adminFetchJson<{ data?: Record<string, unknown> }>(
-          `${serverUrl}/rooms/${roomId}`,
+          `${serverUrl}/api/rooms/${roomId}`,
           adminToken,
           {
             method: 'PATCH',
@@ -1127,7 +1127,7 @@ export function AdminDashboardPage() {
     if (!adminToken) return;
     try {
       const data = await adminFetchJson<{ data: Record<string, unknown> }>(
-        `${serverUrl}/rooms/${id}`,
+        `${serverUrl}/api/rooms/${id}`,
         adminToken,
       );
       const room = data.data;
@@ -1234,13 +1234,13 @@ export function AdminDashboardPage() {
         },
       };
       if (editingRoomId) {
-        await adminFetchJson(`${serverUrl}/rooms/${editingRoomId}`, adminToken, {
+        await adminFetchJson(`${serverUrl}/api/rooms/${editingRoomId}`, adminToken, {
           method: 'PATCH',
           body: JSON.stringify(body),
         });
         showMessage(t('dashboard.rooms.updated'), 'success');
       } else {
-        await adminFetchJson(`${serverUrl}/rooms`, adminToken, {
+        await adminFetchJson(`${serverUrl}/api/rooms`, adminToken, {
           method: 'POST',
           body: JSON.stringify(body),
         });
@@ -1277,11 +1277,11 @@ export function AdminDashboardPage() {
     try {
       const [detailData, roomsRes] = await Promise.all([
         adminFetchJson<{ data: { user: Record<string, unknown> } }>(
-          `${serverUrl}/getById/${userId}`,
+          `${serverUrl}/api/getById/${userId}`,
           adminToken,
         ),
         adminFetchJson<{ data?: { rooms?: unknown[] } } | { rooms?: unknown[] }>(
-          `${serverUrl}/rooms?page=1&limit=300`,
+          `${serverUrl}/api/rooms?page=1&limit=300`,
           adminToken,
         ),
       ]);
@@ -1359,7 +1359,7 @@ export function AdminDashboardPage() {
     try {
       const res = await adminFetchJson<{
         data?: { signupProfile?: Record<string, unknown> };
-      }>(`${baseUrl}/signup-options/${userModal.id}`, adminToken, {
+      }>(`${baseUrl}/api/signup-options/${userModal.id}`, adminToken, {
         method: 'PATCH',
         body: JSON.stringify(body),
       });
@@ -1396,7 +1396,7 @@ export function AdminDashboardPage() {
     try {
       const res = await adminFetchJson<{
         data?: { subscription?: Record<string, unknown> };
-      }>(`${baseUrl}/subscription/${userModal.id}`, adminToken, {
+      }>(`${baseUrl}/api/subscription/${userModal.id}`, adminToken, {
         method: 'PATCH',
         body: JSON.stringify(body),
       });
@@ -1572,7 +1572,7 @@ export function AdminDashboardPage() {
       if (!adminToken) return;
       setRecipientPickerLoading(true);
       try {
-        let url = `${serverUrl}/getUsers?page=1&limit=200`;
+        let url = `${serverUrl}/api/getUsers?page=1&limit=200`;
         const q = search.trim();
         if (q) url += `&search=${encodeURIComponent(q)}`;
         const data = await adminFetchJson<{ data: { users?: NotifyPickerUser[] } }>(url, adminToken);
@@ -1725,7 +1725,7 @@ export function AdminDashboardPage() {
     try {
       const data = await adminFetchJson<{
         data?: { rooms?: Record<string, unknown>[] };
-      }>(`${serverUrl}/rooms?page=1&limit=300&status=active`, adminToken);
+      }>(`${serverUrl}/api/rooms?page=1&limit=300&status=active`, adminToken);
       const rooms = data.data?.rooms;
       setNotifRoomOptions(Array.isArray(rooms) ? rooms : []);
     } catch (e) {
@@ -1761,7 +1761,7 @@ export function AdminDashboardPage() {
       setRoomMembersLoading(true);
       try {
         const data = await adminFetchJson<{ data: Record<string, unknown> }>(
-          `${serverUrl}/rooms/${roomId}`,
+          `${serverUrl}/api/rooms/${roomId}`,
           adminToken,
         );
         setRoomNotifyMembers(roomMembersForNotify(data.data ?? {}));

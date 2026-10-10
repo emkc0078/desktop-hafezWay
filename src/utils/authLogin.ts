@@ -1,4 +1,4 @@
-/** Mirrors back-hafezway POST /auth/login + admin verification. */
+/** Mirrors back-hafezway POST /api/auth/login + admin verification. */
 
 export type LoginSuccess = {
   accessToken: string;
@@ -38,7 +38,7 @@ async function readJson(
 }
 
 /**
- * POST /auth/login against the selected API host.
+ * POST /api/auth/login against the selected API host.
  * Throws a URL-specific error when nothing is listening (typical for Local API).
  */
 export async function loginWithPassword(
@@ -48,7 +48,7 @@ export async function loginWithPassword(
   languageOptions: LoginLanguageOptions = {},
 ): Promise<LoginSuccess> {
   const base = serverUrl.replace(/\/$/, '');
-  const url = `${base}/auth/login`;
+  const url = `${base}/api/auth/login`;
   const language = languageOptions.language === 'ar' ? 'ar' : 'en';
   const languageTag =
     languageOptions.languageTag || (language === 'ar' ? 'ar-SA' : 'en-US');

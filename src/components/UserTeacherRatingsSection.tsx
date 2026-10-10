@@ -84,7 +84,7 @@ export function UserTeacherRatingsSection({
           data?: { rooms?: Record<string, unknown>[] };
           rooms?: Record<string, unknown>[];
         }>(
-          `${base}/rooms?page=1&limit=300&status=all&reservedTeacherId=${encodeURIComponent(teacherId)}`,
+          `${base}/api/rooms?page=1&limit=300&status=all&reservedTeacherId=${encodeURIComponent(teacherId)}`,
           adminToken,
         );
         if (signal?.aborted) return;
@@ -114,7 +114,7 @@ export function UserTeacherRatingsSection({
         }
 
         // 2) Ratings for this teacher (server-side filter) + client allow-list.
-        const url = `${base}/rooms/admin/room-ratings?page=${page}&limit=10&teacherId=${encodeURIComponent(teacherId)}`;
+        const url = `${base}/api/rooms/admin/room-ratings?page=${page}&limit=10&teacherId=${encodeURIComponent(teacherId)}`;
         const res = await adminFetchJson<{
           data: {
             ratings?: RatingRow[];
