@@ -68,6 +68,7 @@ export const ar: TranslationTree = {
     installRestart: 'تثبيت وإعادة التشغيل',
     openReleasePage: 'تنزيل برنامج التثبيت',
     devPreview: '(معاينة للتطوير — التحديثات الحقيقية تعمل في التطبيق المثبّت بعد نشر إصدار على GitHub.)',
+    downloadFailed: 'فشل التحميل: {message}',
   },
   auth: {
     localApi: 'واجهة محلية (localhost:3000)',
