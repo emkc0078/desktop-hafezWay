@@ -1,7 +1,9 @@
-const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { pipeline } = require('stream/promises');
+const { Transform } = require('stream');
 
 const useViteDevServer =
   process.env.NODE_ENV === 'development' && !app.isPackaged;
@@ -19,6 +21,75 @@ ipcMain.handle('admin:open-downloads-folder', async () => {
   const folderPath = app.getPath('downloads');
   const err = await shell.openPath(folderPath);
   return { ok: !err, error: err || null, path: folderPath };
+});
+
+/**
+ * Download a remote file into the OS Downloads folder.
+ * onProgress({ percent, transferred, total, fileName })
+ */
+async function downloadUrlToDownloads(targetUrl, fileName, onProgress) {
+  const safeName = path.basename(typeof fileName === 'string' ? fileName.trim() : '');
+  if (!/^https?:\/\//i.test(targetUrl) || !safeName || safeName.includes('..')) {
+    throw new Error('Invalid download request');
+  }
+
+  const destPath = path.join(app.getPath('downloads'), safeName);
+  const partialPath = `${destPath}.partial`;
+
+  try {
+    await new Promise((resolve, reject) => {
+      const request = net.request(targetUrl);
+      request.on('response', (response) => {
+        const status = response.statusCode || 0;
+        if (status < 200 || status >= 300) {
+          reject(new Error(`Download failed (HTTP ${status})`));
+          response.resume();
+          return;
+        }
+        const totalHeader = response.headers['content-length'];
+        const total = Number(Array.isArray(totalHeader) ? totalHeader[0] : totalHeader || 0);
+        let transferred = 0;
+        const progress = new Transform({
+          transform(chunk, _enc, callback) {
+            transferred += chunk.length;
+            const percent = total > 0 ? Math.min(100, (transferred / total) * 100) : 0;
+            onProgress?.({ fileName: safeName, percent, transferred, total });
+            callback(null, chunk);
+          },
+        });
+        const out = fs.createWriteStream(partialPath);
+        pipeline(response, progress, out).then(resolve).catch(reject);
+      });
+      request.on('error', reject);
+      request.end();
+    });
+
+    fs.renameSync(partialPath, destPath);
+    const size = fs.statSync(destPath).size;
+    onProgress?.({ fileName: safeName, percent: 100, transferred: size, total: size });
+    return destPath;
+  } catch (error) {
+    try {
+      if (fs.existsSync(partialPath)) fs.unlinkSync(partialPath);
+    } catch {
+      /* ignore */
+    }
+    throw error;
+  }
+}
+
+ipcMain.handle('admin:download-file', async (event, url, fileName) => {
+  const targetUrl = typeof url === 'string' ? url.trim() : '';
+  try {
+    const destPath = await downloadUrlToDownloads(targetUrl, fileName, (progress) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('admin:file-download-progress', progress);
+      }
+    });
+    return { ok: true, path: destPath };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
 });
 
 function getLocalBackupsDir() {
@@ -422,15 +493,24 @@ function setupAutoUpdater(win) {
   ipcMain.handle('admin:download-update', async (_event, version) => {
     const ver = typeof version === 'string' ? version.trim().replace(/^v/i, '') : '';
     const url = serverInstallerUrl(ver);
+    const fileName = ver ? `Hafez-Way-Admin-Setup-${ver}.exe` : 'Hafez-Way-Admin-Setup.exe';
     try {
-      await shell.openExternal(url);
+      const destPath = await downloadUrlToDownloads(url, fileName, (progress) => {
+        sendToWindows('admin:update-download-progress', {
+          percent: progress.percent,
+          transferred: progress.transferred,
+          total: progress.total,
+          bytesPerSecond: 0,
+        });
+        sendToWindows('admin:file-download-progress', progress);
+      });
       sendToWindows('admin:update-downloaded', {
         version: ver || 'latest',
         currentVersion: app.getVersion(),
         simulated: !app.isPackaged,
         openedExternally: true,
       });
-      return { ok: true, opened: true, url };
+      return { ok: true, opened: true, url, path: destPath };
     } catch (e) {
       const message = e?.message || String(e);
       sendToWindows('admin:update-error', message);

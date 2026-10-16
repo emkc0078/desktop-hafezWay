@@ -15,6 +15,7 @@ import {
   installerDownloadUrl,
   syncDesktopUpdateToServer,
 } from '@/utils/desktopUpdates';
+import { downloadInstallerWithProgress } from '@/utils/downloadWithProgress';
 
 type UpdateInfo = {
   version: string;
@@ -70,19 +71,19 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
     [adminToken, serverUrl],
   );
 
-  const openInstaller = useCallback(
-    async (version: string) => {
-      const url = installerDownloadUrl(serverUrl, version);
-      if (bridge?.openExternalUrl) {
-        await bridge.openExternalUrl(url);
-      } else if (bridge?.openLatestReleasePage) {
-        await bridge.openLatestReleasePage(version);
-      } else {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      }
+  const downloadInstaller = useCallback(
+    async (version: string, onPercent?: (percent: number) => void) => {
+      const ver = version.trim().replace(/^v/i, '');
+      const fileName = `Hafez-Way-Admin-Setup-${ver}.exe`;
+      const url = installerDownloadUrl(serverUrl, ver);
+      await downloadInstallerWithProgress({
+        url,
+        fileName,
+        onProgress: (progress) => onPercent?.(progress.percent),
+      });
       return url;
     },
-    [bridge, serverUrl],
+    [serverUrl],
   );
 
   useEffect(() => {
@@ -165,7 +166,9 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
         await syncDesktopUpdateToServer(serverUrl, adminToken, info.version);
         syncedVersionRef.current = info.version;
       }
-      await openInstaller(info.version);
+      await downloadInstaller(info.version, (percent) => {
+        setStatus({ kind: 'downloading', info, percent });
+      });
       setStatus({
         kind: 'downloaded',
         info: { ...info, openedExternally: true },
@@ -173,22 +176,22 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       setStatus({ kind: 'error', message: (e as Error).message, info });
     }
-  }, [adminToken, info, openInstaller, serverUrl]);
+  }, [adminToken, downloadInstaller, info, serverUrl]);
 
   const install = useCallback(() => {
     if (!info) return;
     if (info.simulated || info.openedExternally) {
-      void openInstaller(info.version);
+      void downloadInstaller(info.version);
       return;
     }
     if (!bridge?.installUpdate) return;
     void bridge.installUpdate();
-  }, [bridge, info, openInstaller]);
+  }, [bridge, downloadInstaller, info]);
 
   const openReleasePage = useCallback(() => {
     if (!info?.version) return;
-    void openInstaller(info.version);
-  }, [info, openInstaller]);
+    void download();
+  }, [download, info?.version]);
 
   const dismissBanner = useCallback(() => {
     if (info) setDismissedVersion(info.version);
