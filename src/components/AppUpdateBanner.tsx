@@ -4,11 +4,17 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
+import { useAdminSettings } from '@/context/AdminSettingsContext';
 import { useT } from '@/context/LocaleContext';
 import { Btn } from '@/components/ui';
+import {
+  installerDownloadUrl,
+  syncDesktopUpdateToServer,
+} from '@/utils/desktopUpdates';
 
 type UpdateInfo = {
   version: string;
@@ -18,13 +24,6 @@ type UpdateInfo = {
   /** Installer was handed to the browser because this app build cannot install in place. */
   openedExternally?: boolean;
 };
-
-function installerDownloadUrl(version?: string): string {
-  const ver = (version || '').trim().replace(/^v/i, '');
-  const base = 'https://github.com/emkc0078/desktop-hafezWay/releases';
-  if (!ver) return `${base}/latest`;
-  return `${base}/download/v${ver}/Hafez-Way-Admin-Setup-${ver}.exe`;
-}
 
 type UpdateStatus =
   | { kind: 'idle' }
@@ -53,15 +52,45 @@ function useAppUpdate(): AppUpdateContextValue {
 
 export function AppUpdateProvider({ children }: { children: ReactNode }) {
   const bridge = typeof window !== 'undefined' ? window.hafezwayAdmin : undefined;
+  const { serverUrl, adminToken } = useAdminSettings();
   const [status, setStatus] = useState<UpdateStatus>({ kind: 'idle' });
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
+  const syncedVersionRef = useRef<string | null>(null);
+
+  const mirrorToServer = useCallback(
+    async (version: string) => {
+      if (!adminToken || !version || syncedVersionRef.current === version) return;
+      try {
+        await syncDesktopUpdateToServer(serverUrl, adminToken, version);
+        syncedVersionRef.current = version;
+      } catch {
+        /* download() retries sync; banner still shows the available update */
+      }
+    },
+    [adminToken, serverUrl],
+  );
+
+  const openInstaller = useCallback(
+    async (version: string) => {
+      const url = installerDownloadUrl(serverUrl, version);
+      if (bridge?.openExternalUrl) {
+        await bridge.openExternalUrl(url);
+      } else if (bridge?.openLatestReleasePage) {
+        await bridge.openLatestReleasePage(version);
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+      return url;
+    },
+    [bridge, serverUrl],
+  );
 
   useEffect(() => {
     if (!bridge?.onUpdateAvailable) {
       if (import.meta.env.DEV) {
         setStatus({
           kind: 'available',
-          info: { version: '0.1.21', currentVersion: '0.1.20', simulated: true },
+          info: { version: '0.1.23', currentVersion: '0.1.22', simulated: true },
         });
       }
       return;
@@ -73,6 +102,7 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
         if (prev.kind === 'downloading' || prev.kind === 'downloaded') return prev;
         return { kind: 'available', info };
       });
+      if (!info.simulated) void mirrorToServer(info.version);
     });
     const offProgress = bridge.onUpdateDownloadProgress?.((p) => {
       setStatus((prev) => {
@@ -107,7 +137,12 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
       offDownloaded?.();
       offError?.();
     };
-  }, [bridge]);
+  }, [bridge, mirrorToServer]);
+
+  useEffect(() => {
+    if (status.kind !== 'available' || status.info.simulated || !adminToken) return;
+    void mirrorToServer(status.info.version);
+  }, [adminToken, mirrorToServer, status]);
 
   const info =
     status.kind === 'available' ||
@@ -121,19 +156,16 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
     if (!info) return;
     setStatus({ kind: 'downloading', info, percent: 0 });
     try {
-      if (bridge?.downloadUpdate && !info.simulated) {
-        const result = await bridge.downloadUpdate(info.version);
-        if (result && result.ok === false) {
-          setStatus({ kind: 'error', message: result.error || 'Download failed', info });
+      if (!info.simulated) {
+        if (!adminToken) {
+          throw new Error(
+            'Sign in as admin so the server can download the installer from GitHub, then try again.',
+          );
         }
-        return;
+        await syncDesktopUpdateToServer(serverUrl, adminToken, info.version);
+        syncedVersionRef.current = info.version;
       }
-      const url = installerDownloadUrl(info.version);
-      if (bridge?.openLatestReleasePage) {
-        await bridge.openLatestReleasePage(info.version);
-      } else {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      }
+      await openInstaller(info.version);
       setStatus({
         kind: 'downloaded',
         info: { ...info, openedExternally: true },
@@ -141,23 +173,22 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       setStatus({ kind: 'error', message: (e as Error).message, info });
     }
-  }, [bridge, info]);
+  }, [adminToken, info, openInstaller, serverUrl]);
 
   const install = useCallback(() => {
     if (!info) return;
     if (info.simulated || info.openedExternally) {
-      const url = installerDownloadUrl(info.version);
-      if (bridge?.openLatestReleasePage) void bridge.openLatestReleasePage(info.version);
-      else window.open(url, '_blank', 'noopener,noreferrer');
+      void openInstaller(info.version);
       return;
     }
     if (!bridge?.installUpdate) return;
     void bridge.installUpdate();
-  }, [bridge, info]);
+  }, [bridge, info, openInstaller]);
 
   const openReleasePage = useCallback(() => {
-    void bridge?.openLatestReleasePage?.(info?.version);
-  }, [bridge, info?.version]);
+    if (!info?.version) return;
+    void openInstaller(info.version);
+  }, [info, openInstaller]);
 
   const dismissBanner = useCallback(() => {
     if (info) setDismissedVersion(info.version);

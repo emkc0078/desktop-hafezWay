@@ -20,7 +20,9 @@ const STORAGE_REMEMBER_ME = 'admin_remember_me';
 const STORAGE_REMEMBERED_EMAIL = 'admin_remembered_email';
 
 const DEFAULT_SERVER = 'http://localhost:3000';
-const REMOTE_SERVER = 'http://109.235.65.211';
+/** HTTPS only. Port 80 on the bare IP returns nginx 404 without CORS. */
+const REMOTE_SERVER = 'https://hafezway.com';
+const LEGACY_REMOTE_SERVERS = ['http://109.235.65.211', 'https://109.235.65.211'];
 /** Web app that serves `/livekit/:roomId` (often different port from API, e.g. 8081 vs 3000). */
 const DEFAULT_LIVE_APP = 'http://localhost:8081';
 
@@ -34,6 +36,9 @@ function initialServerUrl(): string {
   if (!stored) return REMOTE_SERVER;
   const normalized = normalizeServerUrl(stored);
   if (normalized === DEFAULT_SERVER || normalized === REMOTE_SERVER) return normalized;
+  if (LEGACY_REMOTE_SERVERS.includes(normalized)) {
+    localStorage.setItem(STORAGE_SERVER, REMOTE_SERVER);
+  }
   return REMOTE_SERVER;
 }
 

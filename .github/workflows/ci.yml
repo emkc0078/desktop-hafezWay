@@ -143,5 +143,23 @@ jobs:
       - name: Print release link
         run: node scripts/print-release-link.cjs
 
+      # Mirror the installer onto hafezway.com and delete older copies on the server.
+      # Requires DESKTOP_UPDATES_SYNC_SECRET in this repo and on the API host .env.
+      - name: Sync installer to API host
+        shell: bash
+        env:
+          DESKTOP_UPDATES_SYNC_SECRET: ${{ secrets.DESKTOP_UPDATES_SYNC_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DESKTOP_UPDATES_SYNC_SECRET:-}" ]; then
+            echo "DESKTOP_UPDATES_SYNC_SECRET not set — skipping server mirror (dashboard sync still works)."
+            exit 0
+          fi
+          VERSION="$(node -p "require('./package.json').version")"
+          curl -fsS -X POST "https://hafezway.com/api/desktop-updates/sync-ci" \
+            -H "Content-Type: application/json" \
+            -H "X-Desktop-Updates-Secret: ${DESKTOP_UPDATES_SYNC_SECRET}" \
+            -d "{\"version\":\"${VERSION}\"}"
+
       # Do not upload `release/` as an Actions artifact — electron-builder already
       # publishes installers to the GitHub Release, and duplicate artifacts hit storage quota.

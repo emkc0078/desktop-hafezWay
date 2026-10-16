@@ -412,42 +412,29 @@ function setupAutoUpdater(win) {
     }
   });
 
+  const serverInstallerUrl = (version) => {
+    const ver = typeof version === 'string' ? version.trim().replace(/^v/i, '') : '';
+    const base = process.env.DESKTOP_UPDATES_PUBLIC_BASE || 'https://hafezway.com/api/desktop-updates/files';
+    if (!ver) return `${base.replace(/\/$/, '')}/latest.yml`;
+    return `${base.replace(/\/$/, '')}/Hafez-Way-Admin-Setup-${ver}.exe`;
+  };
+
   ipcMain.handle('admin:download-update', async (_event, version) => {
-    if (!app.isPackaged) {
-      const ver = typeof version === 'string' ? version.trim().replace(/^v/i, '') : '';
-      const url = ver
-        ? `https://github.com/emkc0078/desktop-hafezWay/releases/download/v${ver}/Hafez-Way-Admin-Setup-${ver}.exe`
-        : 'https://github.com/emkc0078/desktop-hafezWay/releases/latest';
+    const ver = typeof version === 'string' ? version.trim().replace(/^v/i, '') : '';
+    const url = serverInstallerUrl(ver);
+    try {
       await shell.openExternal(url);
       sendToWindows('admin:update-downloaded', {
         version: ver || 'latest',
         currentVersion: app.getVersion(),
-        simulated: true,
+        simulated: !app.isPackaged,
         openedExternally: true,
       });
       return { ok: true, opened: true, url };
-    }
-    try {
-      await getAutoUpdater().downloadUpdate();
-      return { ok: true };
     } catch (e) {
       const message = e?.message || String(e);
-      const ver = typeof version === 'string' ? version.trim().replace(/^v/i, '') : '';
-      const url = ver
-        ? `https://github.com/emkc0078/desktop-hafezWay/releases/download/v${ver}/Hafez-Way-Admin-Setup-${ver}.exe`
-        : 'https://github.com/emkc0078/desktop-hafezWay/releases/latest';
-      try {
-        await shell.openExternal(url);
-        sendToWindows('admin:update-downloaded', {
-          version: ver || 'latest',
-          currentVersion: app.getVersion(),
-          openedExternally: true,
-        });
-        return { ok: true, opened: true, url };
-      } catch {
-        sendToWindows('admin:update-error', message);
-        return { ok: false, error: message };
-      }
+      sendToWindows('admin:update-error', message);
+      return { ok: false, error: message };
     }
   });
 
@@ -458,19 +445,32 @@ function setupAutoUpdater(win) {
   });
 
   ipcMain.handle('admin:open-latest-release-page', async (_event, version) => {
-    const owner = 'emkc0078';
-    const repo = 'desktop-hafezWay';
-    const ver = typeof version === 'string' && version.trim() ? version.trim().replace(/^v/i, '') : '';
-    const url = ver
-      ? `https://github.com/${owner}/${repo}/releases/download/v${ver}/Hafez-Way-Admin-Setup-${ver}.exe`
-      : `https://github.com/${owner}/${repo}/releases/latest`;
+    const url = serverInstallerUrl(version);
     await shell.openExternal(url);
     return { ok: true, url };
+  });
+
+  ipcMain.handle('admin:open-external-url', async (_event, url) => {
+    const target = typeof url === 'string' ? url.trim() : '';
+    if (!/^https?:\/\//i.test(target)) {
+      return { ok: false, error: 'Invalid URL' };
+    }
+    await shell.openExternal(target);
+    return { ok: true, url: target };
   });
 
   if (!app.isPackaged) return;
 
   const updater = getAutoUpdater();
+  // Installers are mirrored on hafezway.com; GitHub remains the publish source.
+  try {
+    updater.setFeedURL({
+      provider: 'generic',
+      url: process.env.DESKTOP_UPDATES_PUBLIC_BASE || 'https://hafezway.com/api/desktop-updates/files',
+    });
+  } catch {
+    /* keep default provider if setFeedURL is unavailable */
+  }
   updater.on('update-available', (info) => {
     sendToWindows('admin:update-available', {
       version: info.version,

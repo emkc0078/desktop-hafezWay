@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('hafezwayAdmin', {
   downloadUpdate: (version) => ipcRenderer.invoke('admin:download-update', version),
   installUpdate: () => ipcRenderer.invoke('admin:install-update'),
   openLatestReleasePage: (version) => ipcRenderer.invoke('admin:open-latest-release-page', version),
+  openExternalUrl: (url) => ipcRenderer.invoke('admin:open-external-url', url),
   onUpdateAvailable: (listener) => subscribe('admin:update-available', listener),
   onUpdateDownloadProgress: (listener) => subscribe('admin:update-download-progress', listener),
   onUpdateDownloaded: (listener) => subscribe('admin:update-downloaded', listener),

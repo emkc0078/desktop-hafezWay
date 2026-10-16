@@ -80,6 +80,7 @@ declare global {
       downloadUpdate: (version?: string) => Promise<{ ok: boolean; simulated?: boolean; opened?: boolean; error?: string; url?: string }>;
       installUpdate: () => Promise<{ ok: boolean; simulated?: boolean }>;
       openLatestReleasePage: (version?: string) => Promise<{ ok: boolean; url?: string }>;
+      openExternalUrl: (url: string) => Promise<{ ok: boolean; url?: string; error?: string }>;
       onUpdateAvailable: (listener: (info: AppUpdateInfo) => void) => () => void;
       onUpdateDownloadProgress: (listener: (progress: AppUpdateProgress) => void) => () => void;
       onUpdateDownloaded: (listener: (info: AppUpdateInfo) => void) => () => void;
