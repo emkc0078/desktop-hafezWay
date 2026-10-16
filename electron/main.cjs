@@ -443,11 +443,12 @@ function setupAutoUpdater(win) {
   const currentVersion = app.getVersion();
 
   // Unpackaged `npm run dev`: show a preview banner so the UI is visible immediately.
+  // Version here is a placeholder; the renderer downloads the latest mirrored installer from the API.
   if (!app.isPackaged) {
     const pushPreview = () => {
       if (win.isDestroyed()) return;
       win.webContents.send('admin:update-available', {
-        version: '0.2.0',
+        version: currentVersion,
         currentVersion,
         simulated: true,
       });
@@ -467,7 +468,7 @@ function setupAutoUpdater(win) {
   ipcMain.handle('admin:check-for-updates', async () => {
     if (!app.isPackaged) {
       sendToWindows('admin:update-available', {
-        version: '0.2.0',
+        version: app.getVersion(),
         currentVersion: app.getVersion(),
         simulated: true,
       });

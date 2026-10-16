@@ -12,7 +12,7 @@ import { useAdminSettings } from '@/context/AdminSettingsContext';
 import { useT } from '@/context/LocaleContext';
 import { Btn } from '@/components/ui';
 import {
-  installerDownloadUrl,
+  resolveMirroredInstaller,
   syncDesktopUpdateToServer,
 } from '@/utils/desktopUpdates';
 import { downloadInstallerWithProgress } from '@/utils/downloadWithProgress';
@@ -26,12 +26,64 @@ type UpdateInfo = {
   openedExternally?: boolean;
 };
 
+type DownloadProgressState = {
+  percent: number;
+  transferred: number;
+  total: number;
+};
+
 type UpdateStatus =
   | { kind: 'idle' }
   | { kind: 'available'; info: UpdateInfo }
-  | { kind: 'downloading'; info: UpdateInfo; percent: number }
+  | { kind: 'downloading'; info: UpdateInfo; progress: DownloadProgressState }
   | { kind: 'downloaded'; info: UpdateInfo }
   | { kind: 'error'; message: string; info?: UpdateInfo };
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function UpdateProgressBar({
+  version,
+  progress,
+  compact,
+}: {
+  version: string;
+  progress: DownloadProgressState;
+  compact?: boolean;
+}) {
+  const t = useT();
+  const percent = Math.round(progress.percent);
+  return (
+    <div
+      className={
+        compact
+          ? 'min-w-[15rem] max-w-xs rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 shadow-sm dark:border-sky-800 dark:bg-sky-950/70'
+          : 'max-w-lg rounded-lg border border-sky-200 bg-sky-50/80 p-3 dark:border-sky-900 dark:bg-sky-950/40'
+      }
+      role="status"
+      aria-live="polite"
+    >
+      <p
+        className={`font-medium text-sky-950 dark:text-sky-50 ${compact ? 'text-xs' : 'text-sm'}`}
+      >
+        {t('update.downloadingTitle', { version, percent: String(percent) })}
+      </p>
+      <p className={`text-sky-900/80 dark:text-sky-100/80 ${compact ? 'mt-0.5 text-[11px]' : 'mt-1 text-xs'}`}>
+        {formatBytes(progress.transferred)} /{' '}
+        {formatBytes(progress.total || progress.transferred || 1)}
+      </p>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-sky-200 dark:bg-sky-900">
+        <div
+          className="h-full rounded-full bg-sky-600 transition-all dark:bg-sky-400"
+          style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 type AppUpdateContextValue = {
   status: UpdateStatus;
@@ -72,18 +124,23 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
   );
 
   const downloadInstaller = useCallback(
-    async (version: string, onPercent?: (percent: number) => void) => {
-      const ver = version.trim().replace(/^v/i, '');
-      const fileName = `Hafez-Way-Admin-Setup-${ver}.exe`;
-      const url = installerDownloadUrl(serverUrl, ver);
+    async (
+      setupUrl: string,
+      setupFile: string,
+      onProgress?: (progress: DownloadProgressState) => void,
+    ) => {
       await downloadInstallerWithProgress({
-        url,
-        fileName,
-        onProgress: (progress) => onPercent?.(progress.percent),
+        url: setupUrl,
+        fileName: setupFile,
+        onProgress: (progress) =>
+          onProgress?.({
+            percent: progress.percent,
+            transferred: progress.transferred,
+            total: progress.total,
+          }),
       });
-      return url;
     },
-    [serverUrl],
+    [],
   );
 
   useEffect(() => {
@@ -91,7 +148,11 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
       if (import.meta.env.DEV) {
         setStatus({
           kind: 'available',
-          info: { version: '0.1.23', currentVersion: '0.1.22', simulated: true },
+          info: {
+            version: 'dev',
+            currentVersion: 'dev',
+            simulated: true,
+          },
         });
       }
       return;
@@ -111,7 +172,15 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
           prev.kind === 'available' || prev.kind === 'downloading' || prev.kind === 'downloaded'
             ? prev.info
             : { version: '?', currentVersion: '?' };
-        return { kind: 'downloading', info, percent: p.percent };
+        return {
+          kind: 'downloading',
+          info,
+          progress: {
+            percent: p.percent,
+            transferred: p.transferred ?? 0,
+            total: p.total ?? 0,
+          },
+        };
       });
     });
     const offDownloaded = bridge.onUpdateDownloaded?.((info) => {
@@ -155,23 +224,36 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
 
   const download = useCallback(async () => {
     if (!info) return;
-    setStatus({ kind: 'downloading', info, percent: 0 });
+    setStatus({
+      kind: 'downloading',
+      info,
+      progress: { percent: 0, transferred: 0, total: 0 },
+    });
     try {
-      if (!info.simulated) {
-        if (!adminToken) {
-          throw new Error(
-            'Sign in as admin so the server can download the installer from GitHub, then try again.',
-          );
-        }
-        await syncDesktopUpdateToServer(serverUrl, adminToken, info.version);
-        syncedVersionRef.current = info.version;
-      }
-      await downloadInstaller(info.version, (percent) => {
-        setStatus({ kind: 'downloading', info, percent });
+      // Always resolve against the server mirror. Dev preview versions (e.g. 0.1.23 / 0.2.0)
+      // are not real files — sync/fetch the latest mirrored installer instead.
+      const mirrored = await resolveMirroredInstaller({
+        serverUrl,
+        adminToken,
+        preferredVersion: info.version,
+        useLatest: Boolean(info.simulated),
+      });
+      syncedVersionRef.current = mirrored.version;
+      const downloadInfo: UpdateInfo = {
+        ...info,
+        version: mirrored.version,
+      };
+      setStatus({
+        kind: 'downloading',
+        info: downloadInfo,
+        progress: { percent: 0, transferred: 0, total: mirrored.bytes },
+      });
+      await downloadInstaller(mirrored.setupUrl, mirrored.setupFile, (progress) => {
+        setStatus({ kind: 'downloading', info: downloadInfo, progress });
       });
       setStatus({
         kind: 'downloaded',
-        info: { ...info, openedExternally: true },
+        info: { ...downloadInfo, openedExternally: true },
       });
     } catch (e) {
       setStatus({ kind: 'error', message: (e as Error).message, info });
@@ -181,12 +263,12 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
   const install = useCallback(() => {
     if (!info) return;
     if (info.simulated || info.openedExternally) {
-      void downloadInstaller(info.version);
+      void download();
       return;
     }
     if (!bridge?.installUpdate) return;
     void bridge.installUpdate();
-  }, [bridge, downloadInstaller, info]);
+  }, [bridge, download, info]);
 
   const openReleasePage = useCallback(() => {
     if (!info?.version) return;
@@ -226,8 +308,6 @@ export function AppUpdateBanner() {
     return null;
   }
 
-  const percent = status.kind === 'downloading' ? Math.round(status.percent) : 0;
-
   return (
     <div
       className="border-b border-sky-300 bg-sky-50 px-4 py-3 text-sky-950 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-50"
@@ -235,29 +315,26 @@ export function AppUpdateBanner() {
     >
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 rtl-flip-row">
         <div className="min-w-0 flex-1 space-y-1">
-          <p className="text-sm font-semibold">
-            {status.kind === 'downloaded'
-              ? t('update.readyTitle', { version: info.version })
-              : status.kind === 'downloading'
-                ? t('update.downloadingTitle', { version: info.version, percent: String(percent) })
-                : t('update.availableTitle', { version: info.version })}
-          </p>
-          <p className="text-xs text-sky-900/80 dark:text-sky-100/80">
-            {t('update.availableBody', {
-              current: info.currentVersion,
-              latest: info.version,
-            })}
-            {info.simulated ? ` ${t('update.devPreview')}` : ''}
-            {status.kind === 'error' ? ` ${status.message}` : ''}
-          </p>
           {status.kind === 'downloading' ? (
-            <div className="mt-2 h-1.5 max-w-md overflow-hidden rounded-full bg-sky-200 dark:bg-sky-900">
-              <div
-                className="h-full rounded-full bg-sky-600 transition-all dark:bg-sky-400"
-                style={{ width: `${percent}%` }}
-              />
-            </div>
-          ) : null}
+            <UpdateProgressBar version={info.version} progress={status.progress} />
+          ) : (
+            <>
+              <p className="text-sm font-semibold">
+                {status.kind === 'downloaded'
+                  ? t('update.readyTitle', { version: info.version })
+                  : t('update.availableTitle', { version: info.version })}
+              </p>
+              <p className="text-xs text-sky-900/80 dark:text-sky-100/80">
+                {status.kind === 'error'
+                  ? t('update.downloadFailed', { message: status.message })
+                  : t('update.availableBody', {
+                      current: info.currentVersion,
+                      latest: info.version,
+                    })}
+                {status.kind !== 'error' && info.simulated ? ` ${t('update.devPreview')}` : ''}
+              </p>
+            </>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 rtl-flip-row">
           {status.kind === 'available' || status.kind === 'error' ? (
@@ -302,12 +379,7 @@ export function AppUpdateHeaderButton() {
   if (!info || status.kind === 'idle') return null;
 
   if (status.kind === 'downloading') {
-    const percent = Math.round(status.percent);
-    return (
-      <span className="inline-flex items-center rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white">
-        {t('update.downloadingTitle', { version: info.version, percent: String(percent) })}
-      </span>
-    );
+    return <UpdateProgressBar version={info.version} progress={status.progress} compact />;
   }
 
   const installing = status.kind === 'downloaded';

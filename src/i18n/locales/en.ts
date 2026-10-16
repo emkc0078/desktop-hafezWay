@@ -68,6 +68,7 @@ export const en: TranslationTree = {
     installRestart: 'Install & restart',
     openReleasePage: 'Download Setup',
     devPreview: '(Dev preview — real updates apply in the installed app after a GitHub Release.)',
+    downloadFailed: 'Download failed: {message}',
   },
   auth: {
     localApi: 'Local API (localhost:3000)',
