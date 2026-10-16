@@ -4,6 +4,7 @@ import { useT } from '@/context/LocaleContext';
 import { adminFetchJson } from '@/utils/adminFetch';
 import { isAdminSessionExpiredError } from '@/utils/adminSession';
 import { Btn, Card, Field, MessageBanner, Select } from '@/components/ui';
+import { DesktopUpdatesPanel } from '@/app/logs/DesktopUpdatesPanel';
 
 type ByteInfo = { bytes: number; mb: number; gb: number; label: string };
 
@@ -707,6 +708,8 @@ export function ServerControlPanel() {
           </Btn>
         </div>
       </Card>
+
+      <DesktopUpdatesPanel />
 
       <Card>
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
