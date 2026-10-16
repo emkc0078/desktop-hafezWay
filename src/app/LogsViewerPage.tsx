@@ -7,8 +7,9 @@ import { BackupPanel } from '@/app/logs/BackupPanel';
 import { RedisPanel } from '@/app/logs/RedisPanel';
 import { SocketPanel } from '@/app/logs/SocketPanel';
 import { ServerControlPanel } from '@/app/logs/ServerControlPanel';
+import { MushafMirrorPanel } from '@/app/logs/MushafMirrorPanel';
 
-type Tab = 'logs' | 'backup' | 'redis' | 'socket' | 'server';
+type Tab = 'logs' | 'backup' | 'mushaf' | 'redis' | 'socket' | 'server';
 
 export function LogsViewerPage() {
   const { logsApiBase } = useAdminSettings();
@@ -19,6 +20,7 @@ export function LogsViewerPage() {
   const tabs: { id: Tab; labelKey: string }[] = [
     { id: 'logs', labelKey: 'logsPage.tabs.logs' },
     { id: 'backup', labelKey: 'logsPage.tabs.backup' },
+    { id: 'mushaf', labelKey: 'logsPage.tabs.mushaf' },
     { id: 'redis', labelKey: 'logsPage.tabs.redis' },
     { id: 'socket', labelKey: 'logsPage.tabs.socket' },
     { id: 'server', labelKey: 'logsPage.tabs.server' },
@@ -67,6 +69,7 @@ export function LogsViewerPage() {
       >
         {tab === 'logs' && <HttpLogsPanel />}
         {tab === 'backup' && <BackupPanel />}
+        {tab === 'mushaf' && <MushafMirrorPanel />}
         {tab === 'redis' && <RedisPanel />}
         {tab === 'socket' && <SocketPanel />}
         {tab === 'server' && <ServerControlPanel />}
