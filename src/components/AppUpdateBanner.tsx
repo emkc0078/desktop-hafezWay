@@ -108,6 +108,7 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
   const { serverUrl, adminToken } = useAdminSettings();
   const [status, setStatus] = useState<UpdateStatus>({ kind: 'idle' });
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
+  const [downloadedFilePath, setDownloadedFilePath] = useState<string | null>(null);
   const syncedVersionRef = useRef<string | null>(null);
 
   const mirrorToServer = useCallback(
@@ -129,7 +130,7 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
       setupFile: string,
       onProgress?: (progress: DownloadProgressState) => void,
     ) => {
-      await downloadInstallerWithProgress({
+      return await downloadInstallerWithProgress({
         url: setupUrl,
         fileName: setupFile,
         onProgress: (progress) =>
@@ -248,27 +249,37 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
         info: downloadInfo,
         progress: { percent: 0, transferred: 0, total: mirrored.bytes },
       });
-      await downloadInstaller(mirrored.setupUrl, mirrored.setupFile, (progress) => {
+      const dlResult = await downloadInstaller(mirrored.setupUrl, mirrored.setupFile, (progress) => {
         setStatus({ kind: 'downloading', info: downloadInfo, progress });
       });
+      if (dlResult.path) {
+        setDownloadedFilePath(dlResult.path);
+      }
       setStatus({
         kind: 'downloaded',
-        info: { ...downloadInfo, openedExternally: true },
+        info: { ...downloadInfo, openedExternally: dlResult.mode === 'browser' },
       });
     } catch (e) {
       setStatus({ kind: 'error', message: (e as Error).message, info });
     }
   }, [adminToken, downloadInstaller, info, serverUrl]);
 
-  const install = useCallback(() => {
+  const install = useCallback(async () => {
     if (!info) return;
-    if (info.simulated || info.openedExternally) {
-      void download();
+    if (downloadedFilePath && bridge?.launchInstallerAndQuit) {
+      const res = await bridge.launchInstallerAndQuit(downloadedFilePath);
+      if (res.ok) return;
+    }
+    if (bridge?.installUpdate && !info.openedExternally) {
+      void bridge.installUpdate();
       return;
     }
-    if (!bridge?.installUpdate) return;
-    void bridge.installUpdate();
-  }, [bridge, download, info]);
+    if (bridge?.openDownloadsFolder) {
+      await bridge.openDownloadsFolder();
+      return;
+    }
+    void download();
+  }, [bridge, download, downloadedFilePath, info]);
 
   const openReleasePage = useCallback(() => {
     if (!info?.version) return;

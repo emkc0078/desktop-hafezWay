@@ -79,6 +79,7 @@ declare global {
       checkForUpdates: () => Promise<{ ok: boolean; simulated?: boolean; error?: string; updateInfo?: unknown }>;
       downloadUpdate: (version?: string) => Promise<{ ok: boolean; simulated?: boolean; opened?: boolean; error?: string; url?: string }>;
       installUpdate: () => Promise<{ ok: boolean; simulated?: boolean }>;
+      launchInstallerAndQuit?: (installerPath: string) => Promise<{ ok: boolean; error?: string }>;
       openLatestReleasePage: (version?: string) => Promise<{ ok: boolean; url?: string }>;
       openExternalUrl: (url: string) => Promise<{ ok: boolean; url?: string; error?: string }>;
       downloadFileToDownloads: (

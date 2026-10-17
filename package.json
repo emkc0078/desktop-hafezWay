@@ -18,6 +18,7 @@
     "release": "npm run bump && npm run icons && npm run build && electron-builder --win --mac --x64 --publish always && node scripts/print-release-link.cjs",
     "release:win": "npm run bump && npm run icons && npm run build && electron-builder --win --x64 --publish always && node scripts/print-release-link.cjs",
     "release:mac": "npm run bump && npm run icons && npm run build && electron-builder --mac --publish always && node scripts/print-release-link.cjs",
+    "update:emergency": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/emergency-update.ps1",
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "precommit": "npm run typecheck && npm run lint",
