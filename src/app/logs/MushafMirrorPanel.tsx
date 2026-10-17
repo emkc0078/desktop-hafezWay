@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAdminSettings } from '@/context/AdminSettingsContext';
 import { useLocale, useT } from '@/context/LocaleContext';
 import { Btn, Card, MessageBanner, Select } from '@/components/ui';
-import { adminFetchJson, adminFetchResponse } from '@/utils/adminFetch';
+import { adminFetchJson } from '@/utils/adminFetch';
 import { isAdminSessionExpiredError } from '@/utils/adminSession';
 
 type MirrorMode = 'auto' | 'server' | 'upstream';
@@ -20,12 +20,6 @@ type SourceRow = {
   degraded: boolean;
 };
 
-type BackupRow = {
-  fileName: string;
-  bytes: number;
-  createdAt: string;
-};
-
 type JobState = {
   kind: MirrorKind;
   id: string;
@@ -40,7 +34,6 @@ type StatusData = {
   audio: SourceRow[];
   tafsir: SourceRow[];
   mutashabihat: SourceRow[];
-  backups: BackupRow[];
   job: JobState;
 };
 
@@ -62,7 +55,6 @@ export function MushafMirrorPanel() {
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [backupPick, setBackupPick] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     if (!adminToken) return;
@@ -92,7 +84,7 @@ export function MushafMirrorPanel() {
     return `${row.kind}:${row.id}`;
   }
 
-  function pickedItems(kind?: MirrorKind) {
+  function pickedItems() {
     const rows = [
       ...(status?.pages ?? []),
       ...(status?.audio ?? []),
@@ -100,7 +92,7 @@ export function MushafMirrorPanel() {
       ...(status?.mutashabihat ?? []),
     ];
     return rows
-      .filter((row) => picked.has(sourceKey(row)) && (kind == null || row.kind === kind))
+      .filter((row) => picked.has(sourceKey(row)))
       .map((row) => ({ kind: row.kind, id: row.id }));
   }
 
@@ -168,18 +160,6 @@ export function MushafMirrorPanel() {
     } finally {
       setBusy(null);
     }
-  }
-
-  async function downloadBackup(fileName: string) {
-    if (!adminToken) return;
-    const response = await adminFetchResponse(`${base}/admin/backups/${fileName}`, adminToken);
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    link.click();
-    URL.revokeObjectURL(url);
   }
 
   if (!adminToken) {
@@ -256,20 +236,6 @@ export function MushafMirrorPanel() {
                     {t('mushafMirror.download')}
                   </Btn>
                   <Btn
-                    variant="info"
-                    disabled={busy !== null || row.files === 0}
-                    onClick={() =>
-                      void act(
-                        `${row.id}:backup`,
-                        '/admin/backup',
-                        { kind: row.kind, id: row.id },
-                        t('mushafMirror.backedUp'),
-                      )
-                    }
-                  >
-                    {t('mushafMirror.backup')}
-                  </Btn>
-                  <Btn
                     variant="danger"
                     disabled={busy !== null || row.files === 0 || status?.job?.status === 'running'}
                     onClick={() => {
@@ -330,20 +296,6 @@ export function MushafMirrorPanel() {
           {t('mushafMirror.downloadSelected')}
         </Btn>
         <Btn
-          variant="info"
-          disabled={busy !== null || pickedItems().length === 0}
-          onClick={() => {
-            const items = pickedItems();
-            if (items.length === 0) {
-              setMessage({ text: t('mushafMirror.chooseFirst'), type: 'info' });
-              return;
-            }
-            void act('backup-selected', '/admin/backup-selected', { items }, t('mushafMirror.backedUp'));
-          }}
-        >
-          {t('mushafMirror.backupSelected')}
-        </Btn>
-        <Btn
           variant="danger"
           disabled={busy !== null || status?.job?.status === 'running' || pickedItems().length === 0}
           onClick={() => {
@@ -358,31 +310,6 @@ export function MushafMirrorPanel() {
         >
           {t('mushafMirror.deleteSelected')}
         </Btn>
-        {(
-          [
-            ['page', 'mushafMirror.backupAllPages'],
-            ['audio', 'mushafMirror.backupAllAudio'],
-            ['tafsir', 'mushafMirror.backupAllTafsir'],
-            ['mutashabihat', 'mushafMirror.backupAllMutashabihat'],
-          ] as const
-        ).map(([kind, labelKey]) => (
-          <Btn
-            key={kind}
-            variant="info"
-            disabled={busy !== null}
-            onClick={() => {
-              const ids = pickedItems(kind).map((item) => item.id);
-              void act(
-                `group:${kind}`,
-                '/admin/backup-group',
-                ids.length > 0 ? { kind, ids } : { kind },
-                t('mushafMirror.backedUp'),
-              );
-            }}
-          >
-            {t(labelKey)}
-          </Btn>
-        ))}
       </div>
       <Card>
         <h2 className="mb-3 text-base font-semibold">{t('mushafMirror.pages')}</h2>
@@ -399,103 +326,6 @@ export function MushafMirrorPanel() {
       <Card>
         <h2 className="mb-3 text-base font-semibold">{t('mushafMirror.mutashabihat')}</h2>
         {table(status?.mutashabihat ?? [])}
-      </Card>
-      <Card>
-        <h2 className="mb-3 text-base font-semibold">{t('mushafMirror.backups')}</h2>
-        {(status?.backups.length ?? 0) === 0 ? (
-          <p className="text-sm text-text-muted">{t('mushafMirror.emptyBackups')}</p>
-        ) : (
-          <div className="space-y-2">
-            <Btn
-              variant="info"
-              disabled={busy !== null || backupPick.size === 0 || status?.job?.status === 'running'}
-              onClick={() => {
-                if (backupPick.size === 0) return;
-                if (!window.confirm(t('mushafMirror.restoreSelectedConfirm'))) return;
-                void act(
-                  'restore-backups',
-                  '/admin/backups/restore',
-                  { fileNames: [...backupPick] },
-                  t('mushafMirror.restored'),
-                );
-              }}
-            >
-              {t('mushafMirror.restoreSelected')}
-            </Btn>
-            <Btn
-              variant="danger"
-              disabled={busy !== null || backupPick.size === 0}
-              onClick={() => {
-                if (backupPick.size === 0) return;
-                if (!window.confirm(t('mushafMirror.deleteBackupsConfirm'))) return;
-                void act(
-                  'delete-backups',
-                  '/admin/backups/delete',
-                  { fileNames: [...backupPick] },
-                  t('mushafMirror.deleted'),
-                ).then((ok) => {
-                  if (ok) setBackupPick(new Set());
-                });
-              }}
-            >
-              {t('mushafMirror.deleteBackups')}
-            </Btn>
-            <ul className="space-y-2 text-sm">
-              {status?.backups.map((backup) => (
-                <li key={backup.fileName} className="flex flex-wrap items-center gap-2">
-                  <input
-                    type="checkbox"
-                    aria-label={backup.fileName}
-                    checked={backupPick.has(backup.fileName)}
-                    onChange={(event) => {
-                      setBackupPick((current) => {
-                        const next = new Set(current);
-                        if (event.target.checked) next.add(backup.fileName);
-                        else next.delete(backup.fileName);
-                        return next;
-                      });
-                    }}
-                  />
-                  <span className="font-medium">{backup.fileName}</span>
-                  <span className="text-text-muted">{formatBytes(backup.bytes)}</span>
-                  <Btn variant="secondary" onClick={() => void downloadBackup(backup.fileName)}>
-                    {t('common.download')}
-                  </Btn>
-                  <Btn
-                    variant="info"
-                    disabled={busy !== null || status?.job?.status === 'running'}
-                    onClick={() => {
-                      if (!window.confirm(t('mushafMirror.restoreConfirm'))) return;
-                      void act(
-                        `restore:${backup.fileName}`,
-                        '/admin/backups/restore',
-                        { fileNames: [backup.fileName] },
-                        t('mushafMirror.restored'),
-                      );
-                    }}
-                  >
-                    {t('mushafMirror.restore')}
-                  </Btn>
-                  <Btn
-                    variant="danger"
-                    disabled={busy !== null}
-                    onClick={() => {
-                      if (!window.confirm(t('mushafMirror.deleteBackupsConfirm'))) return;
-                      void act(
-                        `backup:${backup.fileName}`,
-                        '/admin/backups/delete',
-                        { fileNames: [backup.fileName] },
-                        t('mushafMirror.deleted'),
-                      );
-                    }}
-                  >
-                    {t('common.delete')}
-                  </Btn>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       </Card>
       {message ? (
         <MessageBanner text={message.text} type={message.type} onDismiss={() => setMessage(null)} />

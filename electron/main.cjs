@@ -525,6 +525,22 @@ function setupAutoUpdater(win) {
     return { ok: true };
   });
 
+  ipcMain.handle('admin:launch-installer-and-quit', async (_event, installerPath) => {
+    const filePath = typeof installerPath === 'string' ? installerPath.trim() : '';
+    if (!filePath || !fs.existsSync(filePath)) {
+      return { ok: false, error: 'Installer file not found' };
+    }
+    try {
+      await shell.openPath(filePath);
+      setTimeout(() => {
+        app.quit();
+      }, 800);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) };
+    }
+  });
+
   ipcMain.handle('admin:open-latest-release-page', async (_event, version) => {
     const url = serverInstallerUrl(version);
     await shell.openExternal(url);
