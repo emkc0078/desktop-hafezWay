@@ -4,6 +4,25 @@ import {
   shouldLogoutAdminSession,
 } from '@/utils/adminSession';
 
+async function throwAdminHttpError(response: Response, url: string): Promise<never> {
+  let errorData: { message?: string; error?: string };
+  try {
+    errorData = await response.json();
+  } catch {
+    errorData = { message: `HTTP ${response.status}: ${response.statusText}` };
+  }
+  const message =
+    errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+  if (shouldLogoutAdminSession(response.status, message)) {
+    notifyAdminUnauthorized();
+    throw new AdminSessionExpiredError();
+  }
+  if (response.status === 404) {
+    throw new Error(`404: ${message ?? 'Route not found'}. URL: ${url}`);
+  }
+  throw new Error(message);
+}
+
 /** Matches back-hafezway admin HTML: `Authorization: admin <JWT>` */
 export async function adminFetchJson<T = unknown>(
   url: string,
@@ -24,21 +43,36 @@ export async function adminFetchJson<T = unknown>(
     headers,
   });
   if (!response.ok) {
-    let errorData: { message?: string; error?: string };
-    try {
-      errorData = await response.json();
-    } catch {
-      errorData = { message: `HTTP ${response.status}: ${response.statusText}` };
-    }
-    const message = errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
-    if (shouldLogoutAdminSession(response.status, message)) {
-      notifyAdminUnauthorized();
-      throw new AdminSessionExpiredError();
-    }
-    if (response.status === 404) {
-      throw new Error(`404: ${message ?? 'Route not found'}. URL: ${url}`);
-    }
-    throw new Error(message);
+    await throwAdminHttpError(response, url);
+  }
+  return response.json() as Promise<T>;
+}
+
+/**
+ * Multipart upload (e.g. chat voice). Do not set Content-Type — the browser
+ * must attach the multipart boundary.
+ */
+export async function adminFetchFormJson<T = unknown>(
+  url: string,
+  adminToken: string,
+  formData: FormData,
+  options: Omit<RequestInit, 'body'> = {},
+): Promise<T> {
+  if (!adminToken) {
+    throw new Error('Admin token not set');
+  }
+  const response = await fetch(url, {
+    cache: 'no-store',
+    method: 'POST',
+    ...options,
+    body: formData,
+    headers: {
+      Authorization: `admin ${adminToken}`,
+      ...(options.headers || {}),
+    },
+  });
+  if (!response.ok) {
+    await throwAdminHttpError(response, url);
   }
   return response.json() as Promise<T>;
 }

@@ -10,6 +10,11 @@ const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'ut
 export default defineConfig({
   plugins: [react()],
   base: './',
+  envDir: __dirname,
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+  },
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },

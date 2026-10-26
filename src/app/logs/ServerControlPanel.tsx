@@ -134,8 +134,8 @@ export function ServerControlPanel() {
   const [statusError, setStatusError] = useState<string | null>(null);
 
   const [actionBusy, setActionBusy] = useState(false);
-  const [clearDistBackend, setClearDistBackend] = useState(false);
-  const [clearDistFrontend, setClearDistFrontend] = useState(false);
+  const [clearDistBackend, setClearDistBackend] = useState(true);
+  const [clearDistFrontend, setClearDistFrontend] = useState(true);
 
   const [deployLogFilter, setDeployLogFilter] = useState<DeployLogFilter>('all');
   const [deployLogs, setDeployLogs] = useState<DeployLogListItem[]>([]);
@@ -346,7 +346,7 @@ export function ServerControlPanel() {
         adminToken,
         {
           method: 'POST',
-          body: JSON.stringify(clearDist ? { clearDist: true } : {}),
+          body: JSON.stringify({ clearDist }),
         },
       );
       setBanner({
