@@ -326,6 +326,12 @@ export const ar: TranslationTree = {
       voiceSendFailed: 'تعذر إرسال الرسالة الصوتية',
       voiceDeleted: 'تم حذف هذه الرسالة',
       voiceUnsupported: 'تسجيل الصوت غير مدعوم في هذه البيئة',
+      voiceUnavailable: 'الرسالة الصوتية غير متاحة',
+      voiceDeleteTitle: 'حذف الرسالة الصوتية',
+      voiceDeleteForMe: 'مسح عندي',
+      voiceDeleteForEveryone: 'مسح عند الجميع',
+      voiceDeleteForEveryoneHint: 'متاح خلال ساعة من الإرسال',
+      voiceDeleteFailed: 'تعذر حذف الرسالة الصوتية',
     },
     payments: {
       title: 'مدفوعات فودافون كاش',
