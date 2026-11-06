@@ -326,6 +326,12 @@ export const en: TranslationTree = {
       voiceSendFailed: 'Could not send voice message',
       voiceDeleted: 'This message was deleted',
       voiceUnsupported: 'Voice recording is not supported in this environment',
+      voiceUnavailable: 'Voice message unavailable',
+      voiceDeleteTitle: 'Delete voice message',
+      voiceDeleteForMe: 'Delete for me',
+      voiceDeleteForEveryone: 'Delete for everyone',
+      voiceDeleteForEveryoneHint: 'Available within 1 hour of sending',
+      voiceDeleteFailed: 'Could not delete the voice message',
     },
     payments: {
       title: 'Vodafone Cash payments',
