@@ -1447,7 +1447,13 @@ export function AdminDashboardPage() {
   const userAction = async (path: string, method: string) => {
     if (!adminToken) return;
     try {
-      await adminFetchJson(`${serverUrl}${path}`, adminToken, { method });
+      // User routes are mounted under /api (and /). Prefer /api so nginx CORS applies.
+      const apiPath = path.startsWith('/api/')
+        ? path
+        : `/api${path.startsWith('/') ? path : `/${path}`}`;
+      await adminFetchJson(`${serverUrl.replace(/\/$/, '')}${apiPath}`, adminToken, {
+        method,
+      });
       showMessage(t('common.success'), 'success');
       void loadUsers();
     } catch (e) {
