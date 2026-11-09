@@ -16,6 +16,7 @@ import {
   tableCellClass,
   tableHeadClass,
 } from '@/components/ui';
+import { signupPlanLabel } from '@/utils/signupPlanLabel';
 
 type PaymentStatus = 'pending' | 'approved' | 'rejected';
 type StatusFilter = PaymentStatus | 'all';
@@ -422,7 +423,9 @@ export function PaymentsPanel({
                   </td>
                   <td className={tableCellClass}>
                     {row.amount != null ? `${row.amount} ${row.currency}` : '—'}
-                    <div className="text-xs text-text-muted">{row.planKey}</div>
+                    <div className="text-xs text-text-muted" title={row.planKey || undefined}>
+                      {signupPlanLabel(row.planKey, t)}
+                    </div>
                   </td>
                   <td className={tableCellClass}>{row.transferNumber || '—'}</td>
                   <td className={tableCellClass}>
@@ -575,7 +578,9 @@ export function PaymentsPanel({
               </p>
               <p>
                 <span className="text-text-muted">{t('dashboard.payments.plan')}: </span>
-                {selected.planKey}
+                <span title={selected.planKey || undefined}>
+                  {signupPlanLabel(selected.planKey, t)}
+                </span>
               </p>
               <p>
                 <span className="text-text-muted">{t('dashboard.payments.amount')}: </span>

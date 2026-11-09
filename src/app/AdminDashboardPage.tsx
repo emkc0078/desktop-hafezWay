@@ -7,6 +7,10 @@ import { reportAdminApiError } from '@/utils/adminSession';
 import { escapeHtml } from '@/utils/escapeHtml';
 import { buildLivekitRoomViewUrl } from '@/utils/livekitRoomUrl';
 import {
+  looksLikeSignupPlanKey,
+  signupPlanLabel,
+} from '@/utils/signupPlanLabel';
+import {
   StudentReportDetailModal,
   type SessionStudentReportRow,
 } from '@/components/StudentReportDetailModal';
@@ -20,6 +24,7 @@ import { SiteAgreementPanel } from '@/components/SiteAgreementPanel';
 import { VideosPanel } from '@/components/VideosPanel';
 import { AdvertisementsPanel } from '@/components/AdvertisementsPanel';
 import { HomeFeaturedBookPanel } from '@/components/HomeFeaturedBookPanel';
+import { AiTeacherSettingsPanel } from '@/components/AiTeacherSettingsPanel';
 import { HomeHadithsPanel } from '@/components/HomeHadithsPanel';
 import { NewsletterSubscribersPanel } from '@/components/NewsletterSubscribersPanel';
 import { UserMonthlyAttendanceSection } from '@/components/UserMonthlyAttendanceSection';
@@ -87,6 +92,7 @@ type Tab =
   | 'homeFeaturedBook'
   | 'homeHadiths'
   | 'newsletterSubscribers'
+  | 'aiTeacherSettings'
   | 'customerService';
 
 const AUTH_PROVIDER_GOOGLE = 'google';
@@ -337,6 +343,7 @@ function signupDraftFromUserDetail(detail: Record<string, unknown>): AdminSignup
 /** Label for stored quiz key; falls back to raw value if unknown. */
 function signupQuizOptionLabel(val: string, t: (key: string) => string): string {
   if (!val) return '';
+  if (looksLikeSignupPlanKey(val)) return signupPlanLabel(val, t);
   const path = `dashboard.users.signupQuizVals.${val}`;
   const lbl = t(path);
   return lbl === path ? val : lbl;
@@ -2053,6 +2060,10 @@ export function AdminDashboardPage() {
             id: 'newsletterSubscribers',
             label: t('dashboard.tabs.newsletterSubscribers'),
           },
+          {
+            id: 'aiTeacherSettings',
+            label: t('dashboard.tabs.aiTeacherSettings'),
+          },
         ],
       },
       {
@@ -3140,6 +3151,7 @@ export function AdminDashboardPage() {
         {tab === 'homeFeaturedBook' && <HomeFeaturedBookPanel />}
         {tab === 'homeHadiths' && <HomeHadithsPanel />}
         {tab === 'newsletterSubscribers' && <NewsletterSubscribersPanel />}
+        {tab === 'aiTeacherSettings' && <AiTeacherSettingsPanel />}
         <div className={tab === 'customerService' ? 'block' : 'hidden'}>
           <CustomerServiceChatPanel
             serverUrl={serverUrl}
